@@ -4,6 +4,7 @@ Coleta: nome, preço, valor de mercado, volume médio em US$, dividend yield (12
 frequência, meses de pagamento, CAGR do dividendo (5a), anos sem corte e anos de listagem.
 AFFO, payout, dívida/EBITDA e rating NÃO têm fonte gratuita confiável -> entrada manual.
 """
+import logging
 import time
 from datetime import datetime, timedelta
 from statistics import median
@@ -113,12 +114,13 @@ def obter_historico(t, ticker, dormir=None, espera=4.0):
     ultimo_erro = None
     for i, kw in enumerate(tentativas):
         try:
-            hist = com_retentativa(lambda: t.history(auto_adjust=False, actions=True, **kw), dormir=dormir)
+            hist = com_retentativa(lambda: t.history(auto_adjust=False, actions=True, raise_errors=True, **kw), dormir=dormir)
             if hist is not None and not hist.empty:
                 return hist
             ultimo_erro = HistoricoVazio(f"Yahoo retornou histórico vazio para {ticker} (provável limitação temporária).")
         except Exception as e:
             ultimo_erro = e
+            logging.getLogger("painvest").warning("Yahoo %s %s: %s: %s", ticker, kw, type(e).__name__, str(e)[:200])
         if i + 1 < len(tentativas):
             (dormir or time.sleep)(espera * (i + 1))
     raise ultimo_erro
@@ -181,5 +183,5 @@ def coletar(ticker, existente=None):
 def treasury_10a():
     """Rendimento do Treasury de 10 anos (% a.a.) via ^TNX."""
     import yfinance as yf
-    hist = com_retentativa(lambda: yf.Ticker("^TNX").history(period="5d"))
+    hist = com_retentativa(lambda: yf.Ticker("^TNX").history(period="5d", raise_errors=True))
     return round(float(hist["Close"].iloc[-1]), 2)
