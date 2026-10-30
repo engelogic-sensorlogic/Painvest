@@ -16,7 +16,7 @@ from flask import Flask, flash, redirect, render_template, request, send_file, u
 import db
 import scoring
 
-VERSAO = "1.0.0"
+VERSAO = "1.0.1"
 PORTA = 5077
 
 app = Flask(__name__, template_folder=db.resource_path("templates"),

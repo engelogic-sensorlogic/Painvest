@@ -8,7 +8,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 set "VERSAO=%~1"
-if "%VERSAO%"=="" set "VERSAO=1.0.0"
+if "%VERSAO%"=="" set "VERSAO=1.0.1"
 
 echo.
 echo [1/6] Ambiente virtual...

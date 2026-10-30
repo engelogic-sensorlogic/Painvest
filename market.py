@@ -4,7 +4,8 @@ Coleta: nome, preço, valor de mercado, volume médio em US$, dividend yield (12
 frequência, meses de pagamento, CAGR do dividendo (5a), anos sem corte e anos de listagem.
 AFFO, payout, dívida/EBITDA e rating NÃO têm fonte gratuita confiável -> entrada manual.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
+from statistics import median
 
 
 def analisar_dividendos(divs, hoje=None):
@@ -15,13 +16,25 @@ def analisar_dividendos(divs, hoje=None):
     hoje = hoje or datetime.now()
     res = {"pagamentos_12m": 0, "frequencia": None, "meses_pagamento": "",
            "cagr_div_5a": None, "anos_sem_corte": None, "div_12m": 0.0}
+    divs = sorted((d, v) for d, v in divs if v and v > 0)
     if not divs:
         return res
 
-    ult12 = [(d, v) for d, v in divs if (hoje - d).days <= 365]
+    # 1) Separa dividendos extraordinários: valor > 1,5x a mediana dos vizinhos
+    vals = [v for _, v in divs]
+    regulares = []
+    for i, (d, v) in enumerate(divs):
+        viz = vals[max(0, i - 4):i] + vals[i + 1:i + 5]
+        if viz and v > 1.5 * median(viz):
+            continue
+        regulares.append((d, v))
+    if not regulares:
+        return res
+
+    # 2) Frequência e meses (pagamentos regulares nos últimos 12 meses)
+    ult12 = [(d, v) for d, v in regulares if (hoje - d).days <= 365]
     n = len(ult12)
     res["pagamentos_12m"] = n
-    res["div_12m"] = sum(v for _, v in ult12)
     if n >= 10:
         res["frequencia"] = "Mensal"
     elif n >= 3:
@@ -32,27 +45,37 @@ def analisar_dividendos(divs, hoje=None):
         res["frequencia"] = "Anual"
     res["meses_pagamento"] = ",".join(str(m) for m in sorted({d.month for d, _ in ult12}))
 
-    # Totais por ano completo (exclui o ano corrente, ainda parcial)
-    anos = {}
-    for d, v in divs:
-        if d.year < hoje.year:
-            anos[d.year] = anos.get(d.year, 0.0) + v
-    ult_ano = hoje.year - 1
-    if ult_ano in anos and (ult_ano - 5) in anos and anos[ult_ano - 5] > 0:
-        res["cagr_div_5a"] = round(((anos[ult_ano] / anos[ult_ano - 5]) ** (1 / 5) - 1) * 100, 2)
+    # 3) Dividendo anualizado = último pagamento regular x pagamentos/ano
+    #    (evita erro de 13 datas-ex num ano quando a data-ex cai no fim do mês)
+    por_ano = {"Mensal": 12, "Trimestral": 4, "Semestral": 2, "Anual": 1}.get(res["frequencia"])
+    ultimo_d, ultimo_v = regulares[-1]
+    res["div_12m"] = ultimo_v * por_ano if por_ano else sum(v for _, v in ult12)
 
-    # Anos consecutivos sem corte (queda > 3% no total anual = corte).
-    # Dividendos extraordinários podem gerar falso corte -> use o campo manual para corrigir.
-    seq = sorted(anos)
-    if seq:
-        sem_corte = 0
-        for ano in range(ult_ano, seq[0], -1):
-            if ano not in anos or (ano - 1) not in anos:
-                break
-            if anos[ano] < anos[ano - 1] * 0.97:
-                break
-            sem_corte += 1
-        res["anos_sem_corte"] = sem_corte
+    # 4) Cortes: pagamento regular < 97% do anterior, confirmado pelo pagamento seguinte,
+    #    ou suspensão (intervalo > 2,5x o intervalo típico).
+    intervalos = [(regulares[i][0] - regulares[i - 1][0]).days for i in range(1, len(regulares))]
+    tipico = median(intervalos) if intervalos else 365
+    ultimo_corte = None
+    for i in range(1, len(regulares)):
+        d, v = regulares[i]
+        anterior = regulares[i - 1][1]
+        if intervalos[i - 1] > 2.5 * tipico:
+            ultimo_corte = d
+        elif v < 0.97 * anterior:
+            seguinte = regulares[i + 1][1] if i + 1 < len(regulares) else v
+            if seguinte < 0.97 * anterior:
+                ultimo_corte = d
+    if (hoje - ultimo_d).days > 2.5 * tipico:  # pagamentos suspensos atualmente
+        ultimo_corte = hoje
+    inicio = ultimo_corte or regulares[0][0]
+    res["anos_sem_corte"] = int((hoje - inicio).days / 365.25)
+
+    # 5) CAGR 5 anos: pagamento regular atual vs. o de ~5 anos antes
+    alvo = ultimo_d - timedelta(days=round(5 * 365.25))
+    proximos = [(abs((d - alvo).days), v) for d, v in regulares if abs((d - alvo).days) <= 120]
+    if proximos:
+        v5 = min(proximos)[1]
+        res["cagr_div_5a"] = round(((ultimo_v / v5) ** (1 / 5) - 1) * 100, 2)
     return res
 
 

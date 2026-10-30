@@ -78,7 +78,47 @@ def test_analise_dividendos_mensal():
     m = market.analisar_dividendos(divs, hoje)
     assert m["frequencia"] == "Mensal"
     assert m["cagr_div_5a"] == pytest.approx(3.0, abs=0.01)
-    assert m["anos_sem_corte"] == 11  # 2015..2025
+    assert m["anos_sem_corte"] == 12  # histórico desde 2014, sem cortes
+
+
+def test_mensal_data_ex_fim_de_mes_nao_gera_falso_corte():
+    """Caso Realty Income: data-ex no último dia do mês -> anos com 11 ou 13 pagamentos."""
+    hoje = datetime(2026, 10, 30)
+    divs, valor = [], 0.20
+    for ano in range(2013, 2027):
+        for mes in range(1, 13):
+            # dezembro: em anos pares a data-ex cai em 1º/jan do ano seguinte
+            d = datetime(ano + 1, 1, 1) if (mes == 12 and ano % 2 == 0) else datetime(ano, mes, 28)
+            if d <= hoje:
+                divs.append((d, valor))
+                valor *= 1.002  # aumento pequeno e contínuo
+    anos = {}
+    for d, _ in divs:
+        anos[d.year] = anos.get(d.year, 0) + 1
+    assert {11, 13} <= set(anos.values())  # confirma o cenário de 11/13 pagamentos
+    m = market.analisar_dividendos(divs, hoje)
+    assert m["frequencia"] == "Mensal"
+    assert m["anos_sem_corte"] >= 10
+    assert m["cagr_div_5a"] == pytest.approx((1.002 ** 12 - 1) * 100, abs=0.1)  # CAGR anual
+
+
+def test_extraordinario_nao_conta_como_corte():
+    hoje = datetime(2026, 10, 30)
+    divs = [(datetime(a, m, 15), 1.0) for a in range(2012, 2027) for m in (3, 6, 9, 12)
+            if datetime(a, m, 15) <= hoje]
+    divs.append((datetime(2022, 12, 28), 3.5))  # dividendo especial
+    m = market.analisar_dividendos(divs, hoje)
+    assert m["frequencia"] == "Trimestral"
+    assert m["anos_sem_corte"] >= 14
+    assert m["div_12m"] == pytest.approx(4.0)
+
+
+def test_suspensao_conta_como_corte():
+    hoje = datetime(2026, 10, 30)
+    divs = [(datetime(a, mes, 1), 0.3) for a in range(2012, 2027) for mes in range(1, 13)
+            if datetime(a, mes, 1) <= hoje and not (datetime(2020, 5, 1) <= datetime(a, mes, 1) <= datetime(2021, 6, 1))]
+    m = market.analisar_dividendos(divs, hoje)
+    assert m["anos_sem_corte"] == 5  # retomada em jul/2021
 
 
 def test_analise_dividendos_corte_trimestral():
@@ -93,7 +133,7 @@ def test_analise_dividendos_corte_trimestral():
     m = market.analisar_dividendos(divs, hoje)
     assert m["frequencia"] == "Trimestral"
     assert m["meses_pagamento"] == "3,6,9,12"
-    assert m["anos_sem_corte"] == 5  # 2021..2025 (2020 foi corte)
+    assert m["anos_sem_corte"] == 6  # corte em mar/2020
 
 
 @pytest.fixture
