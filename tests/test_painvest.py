@@ -219,10 +219,10 @@ def _fatos_sec():
 
 
 def test_sec_calculo_ffo_payout_alavancagem():
-    r = sec.calcular(_fatos_sec(), ajuste_payout=5.0)
+    r = sec.calcular(_fatos_sec())
     assert r["ffo_ano_ref"] == 2025
-    # FFO 2025 = 1100 + 1000 - 100 = 2000 mi ; payout = 1300/2000 = 65% (+5 p.p.)
-    assert r["payout_calc"] == pytest.approx(70.0)
+    # FFO 2025 = 1100 + 1000 - 100 = 2000 mi ; payout = 1300/2000 = 65% (bruto, sem ajuste)
+    assert r["payout_calc"] == pytest.approx(65.0)
     # EBITDAre = 1100 + 500 + 1000 - 100 = 2500 ; (12000 - 400) / 2500 = 4,64x
     assert r["div_ebitda_calc"] == pytest.approx(4.64)
     assert r["ffo_positivo_calc"] == 1
@@ -335,3 +335,37 @@ def test_erro_que_nao_e_limitacao_nao_repete():
     with pytest.raises(ValueError):
         market.com_retentativa(falha, dormir=lambda s: None)
     assert len(chamadas) == 1
+
+
+# ---------------- v1.1.2: acumulados, ajuste por setor e status Verificar ----------------
+def test_trimestre_derivado_de_acumulados_do_ano():
+    """Impairment informado só como acumulado (3, 6, 9 meses) — caso Realty Income."""
+    itens = [
+        {"start": "2026-01-01", "end": "2026-03-31", "val": 100.0, "form": "10-Q", "filed": "2026-05-01"},
+        {"start": "2026-01-01", "end": "2026-06-30", "val": 220.0, "form": "10-Q", "filed": "2026-08-01"},
+        {"start": "2025-01-01", "end": "2025-09-30", "val": 300.0, "form": "10-Q", "filed": "2025-11-01"},
+        {"start": "2025-01-01", "end": "2025-06-30", "val": 180.0, "form": "10-Q", "filed": "2025-08-01"},
+    ]
+    serie, _ = sec.serie_trimestral({"facts": {"us-gaap": {"ImpairmentOfRealEstate": {"units": {"USD": itens}}}}},
+                                    ["ImpairmentOfRealEstate"])
+    assert serie["2026-06-30"] == pytest.approx(120.0)   # 6m − 3m
+    assert serie["2025-09-30"] == pytest.approx(120.0)   # 9m − 6m
+    assert serie["2026-03-31"] == pytest.approx(100.0)
+
+
+def test_ajuste_payout_por_setor():
+    base = dict(COMPLETA, payout_affo=None, payout_calc=75.4)
+    av_nl = scoring.avaliar(dict(base, setor="Net Lease - Varejo"), cfg())
+    av_ap = scoring.avaliar(dict(base, setor="Residencial - Apartamentos"), cfg())
+    assert av_nl["efetivo"]["payout_affo"] == pytest.approx(75.4)   # net lease: AFFO ≈ FFO
+    assert av_ap["efetivo"]["payout_affo"] == pytest.approx(83.4)   # apartamentos: +8 p.p.
+
+
+def test_calculado_fora_do_limite_vira_verificar():
+    r = dict(COMPLETA, div_liq_ebitda=None, div_ebitda_calc=6.14)
+    assert scoring.avaliar(r, cfg())["status"] == "Verificar"
+    c = cfg()
+    c["calc_apenas_sinaliza"] = False
+    assert scoring.avaliar(r, c)["status"] == "Reprovada"
+    # valor manual confirmado fora do limite reprova sempre
+    assert scoring.avaliar(dict(COMPLETA, div_liq_ebitda=6.5), cfg())["status"] == "Reprovada"

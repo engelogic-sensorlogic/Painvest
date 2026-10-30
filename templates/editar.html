@@ -42,7 +42,7 @@
       <option value="1" {{ 'selected' if r.affo_positivo_5a==1 }}>Sim</option>
       <option value="0" {{ 'selected' if r.affo_positivo_5a==0 }}>Não</option></select></div>
     <div><label>Anos com AFFO/ação crescente (0–5) <span class="calc">calc: {{ r.ffo_anos_cresc_calc if r.ffo_anos_cresc_calc is not none else '—' }}</span></label><input name="affo_anos_crescimento" placeholder="vazio = usar calculado" value="{{ r.affo_anos_crescimento if r.affo_anos_crescimento is not none else '' }}"></div>
-    <div><label>Payout do AFFO (%) <span class="calc">calc: {{ r.payout_calc|n(1,'%') }}</span></label><input name="payout_affo" placeholder="vazio = usar calculado" value="{{ r.payout_affo if r.payout_affo is not none else '' }}"></div>
+    <div><label>Payout do AFFO (%) <span class="calc">calc: {{ (av.efetivo.payout_affo if 'payout_affo' in av.origem_calc else r.payout_calc)|n(1,'%') }}</span></label><input name="payout_affo" placeholder="vazio = usar calculado" value="{{ r.payout_affo if r.payout_affo is not none else '' }}"></div>
     <div><label>Dív. líquida / EBITDA (x) <span class="calc">calc: {{ r.div_ebitda_calc|n(2,'x') }}</span></label><input name="div_liq_ebitda" placeholder="vazio = usar calculado" value="{{ r.div_liq_ebitda if r.div_liq_ebitda is not none else '' }}"></div>
     <div><label>Rating (S&amp;P/Moody's equivalente)</label><select name="rating"><option value="">—</option>
       {% for x in ratings %}<option {{ 'selected' if r.rating==x }}>{{ x }}</option>{% endfor %}</select></div>
@@ -73,7 +73,7 @@
     {% endfor %}
   </table>
   <p class="mut">EBITDAre ({{ sec.ultimo.base_ebitda or 'ano fiscal' }}): US$ {{ (sec.ultimo.ebitda/1e6)|n(0) }} mi · Dívida US$ {{ (sec.ultimo.divida/1e6 if sec.ultimo.divida else none)|n(0) }} mi ·
-    Caixa US$ {{ (sec.ultimo.caixa/1e6 if sec.ultimo.caixa else none)|n(0) }} mi. Payout inclui ajuste de +{{ cfg.ajuste_payout_ffo|n(1) }} p.p. (FFO → AFFO).<br>
+    Caixa US$ {{ (sec.ultimo.caixa/1e6 if sec.ultimo.caixa else none)|n(0) }} mi. Payout de FFO {{ r.payout_calc|n(1,'%') }} + ajuste do setor (FFO → AFFO), configurável em Metodologia.<br>
     Tags XBRL usadas: {% for k, t in sec.tags.items() if t %}{{ k }}={{ t }}{{ ', ' if not loop.last }}{% endfor %}</p>
   <p class="mut">Aproximação padronizada (definição Nareit). Se divergir do <i>Supplemental Package</i>, digite o valor da empresa no campo manual — ele prevalece.</p>
 </div>

@@ -73,7 +73,7 @@
       <td class="mut">
         {% if r.erro_coleta %}<div class="falha">Erro Yahoo</div>{% endif %}
         {% if r.sec_erro %}<div class="falha" title="{{ r.sec_erro }}">Erro SEC</div>{% endif %}
-        {% for f in a.reprovados[:2] %}<div class="falha">✗ {{ f[0] }} ({{ f[2] }})</div>{% endfor %}
+        {% for f in a.reprovados[:2] %}{% if a.status == 'Verificar' %}<div class="obs">⚠ Conferir: {{ f[0] }} ({{ f[2] }})</div>{% else %}<div class="falha">✗ {{ f[0] }} ({{ f[2] }})</div>{% endif %}{% endfor %}
         {% if not a.reprovados and a.pendentes %}{{ a.pendentes|length }} campo(s) a preencher{% endif %}
       </td>
     </tr>

@@ -6,7 +6,6 @@
   <h1>Metodologia</h1>
   <div class="grid">
     <div><label>E-mail de contato para a SEC (obrigatório para coleta de FFO)</label><input name="contato_sec" type="email" value="{{ cfg.contato_sec }}" placeholder="seu@email.com.br"></div>
-    <div><label>Ajuste payout FFO → AFFO (p.p.)</label><input name="ajuste_payout_ffo" value="{{ cfg.ajuste_payout_ffo }}"></div>
     <div><label>Retenção nos EUA sobre dividendos (%)</label><input name="retencao_eua" value="{{ cfg.retencao_eua }}"></div>
     <div><label>Treasury 10 anos (% a.a.) — atualizado com as cotações</label><input name="treasury_10a" value="{{ cfg.treasury_10a }}"></div>
     <div><label>Nota mínima para "Candidata"</label><input name="nota_compra" value="{{ cfg.nota_compra }}"></div>
@@ -32,6 +31,17 @@
   <h2 style="margin-top:14px">Setores excluídos</h2>
   <div class="grid">{% for s in setores %}
     <label style="color:var(--txt);font-size:13px"><input type="checkbox" name="setores_excluidos" value="{{ s }}" style="width:auto" {{ 'checked' if s in cfg.filtros.setores_excluidos }}> {{ s }}</label>
+  {% endfor %}</div>
+</div>
+
+<div class="card">
+  <h2>Valores calculados pela SEC</h2>
+  <label style="color:var(--txt);font-size:13px"><input type="checkbox" name="calc_apenas_sinaliza" style="width:auto" {{ 'checked' if cfg.calc_apenas_sinaliza }}>
+    Valor calculado fora do limite apenas <b>sinaliza</b> (status "Verificar"); só reprova com valor confirmado manualmente</label>
+  <h2 style="margin-top:14px">Ajuste do payout FFO → AFFO por setor (p.p.)</h2>
+  <p class="mut">AFFO = FFO − capex de manutenção. Em net lease e cassinos o inquilino paga a manutenção (ajuste ≈ 0); em apartamentos, data centers e escritórios o capex é maior.</p>
+  <div class="grid">{% for s in setores %}
+    <div><label>{{ s }}</label><input name="aj_{{ loop.index0 }}" value="{{ cfg.ajuste_payout_setor.get(s, 0) }}"></div>
   {% endfor %}</div>
 </div>
 

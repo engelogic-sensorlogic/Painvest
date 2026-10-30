@@ -4,7 +4,7 @@ Calcula aproximações padronizadas (definição Nareit) a partir dos balanços 
   FFO      = Lucro líquido + Depreciação/Amortização − Ganhos na venda de imóveis
              + Impairments − Dividendos preferenciais
   EBITDAre = Lucro líquido + Juros + Impostos + D&A − Ganhos + Impairments
-  Payout   = Dividendos pagos aos ordinaristas ÷ FFO
+  Payout   = Dividendos pagos aos ordinaristas ÷ FFO (o ajuste FFO→AFFO por setor é feito no scoring)
   Dívida líquida / EBITDAre anualizado (último trimestre x 4, como as REITs divulgam;
   na falta de dados trimestrais, usa o último ano fiscal)
 
@@ -119,39 +119,39 @@ def serie_anual(fatos, tags, unidade="USD"):
 
 
 def serie_trimestral(fatos, tags, unidade="USD"):
-    """{data_fim: valor} de trimestres (~3 meses), de 10-Q e 10-K.
+    """{data_fim: valor} de trimestres isolados (~3 meses), de 10-Q e 10-K.
 
-    O 4º trimestre raramente é informado isolado: é derivado como ano fiscal − 9 meses acumulados.
+    Muitas empresas informam alguns itens (D&A, impairment) só como ACUMULADO do ano
+    (3, 6, 9 e 12 meses). O trimestre é obtido pela diferença entre acumulados
+    consecutivos com o mesmo início: T2 = 6m − 3m, T3 = 9m − 6m, T4 = 12m − 9m.
+    Valores trimestrais informados diretamente têm prioridade.
     Retorna (serie, tag_usada) da tag com o trimestre mais recente.
     """
     gaap = fatos.get("facts", {}).get("us-gaap", {})
     melhor, tag_melhor = {}, None
     for tag in tags:
-        itens = gaap.get(tag, {}).get("units", {}).get(unidade, [])
-        serie, anual, nove = {}, {}, {}
-        for it in itens:
+        unicos = {}
+        for it in gaap.get(tag, {}).get("units", {}).get(unidade, []):
             dur = _duracao_dias(it)
             if dur is None:
                 continue
-            chave_ord = it.get("filed", "")
-            if 80 <= dur <= 100:
-                alvo = serie
-            elif 340 <= dur <= 380:
-                alvo = anual
-            elif 260 <= dur <= 285:
-                alvo = nove
-            else:
+            n = round(dur / 91.3)
+            if not 1 <= n <= 4 or abs(dur - n * 91.3) > 20:
                 continue
-            k = (it["start"], it["end"]) if alvo is not serie else it["end"]
-            if k not in alvo or chave_ord >= alvo[k][1]:
-                alvo[k] = (float(it["val"]), chave_ord)
-        serie = {k: v for k, (v, _) in serie.items()}
-        for (ini, fim), (v_ano, _) in anual.items():
-            if fim in serie:
-                continue
-            noves = [v for (i9, _f), (v, _) in nove.items() if i9 == ini]
-            if noves:
-                serie[fim] = v_ano - noves[0]
+            k = (it["start"], it["end"])
+            if k not in unicos or it.get("filed", "") >= unicos[k][2]:
+                unicos[k] = (n, float(it["val"]), it.get("filed", ""))
+
+        serie, grupos = {}, {}
+        for (ini, fim), (n, v, _) in unicos.items():
+            if n == 1:
+                serie[fim] = v                      # trimestre informado diretamente
+            grupos.setdefault(ini, {})[n] = (fim, v)
+        for acum in grupos.values():               # trimestres derivados dos acumulados
+            for n in (2, 3, 4):
+                if n in acum and (n - 1) in acum:
+                    fim, v = acum[n]
+                    serie.setdefault(fim, v - acum[n - 1][1])
         if serie and (not melhor or max(serie) > max(melhor)):
             melhor, tag_melhor = serie, tag
     return melhor, tag_melhor
@@ -191,7 +191,7 @@ def divida_total(fatos, quando):
     return (soma, "+".join(usadas)) if usadas else (None, None)
 
 
-def calcular(fatos, ajuste_payout=0.0):
+def calcular(fatos):
     """Calcula os indicadores a partir do JSON companyfacts. Função pura (testável)."""
     s, tags = {}, {}
     for chave, lista in TAGS.items():
@@ -221,7 +221,7 @@ def calcular(fatos, ajuste_payout=0.0):
     div = s["dividendos"].get(ult)
     payout = None
     if div and ffo[ult] > 0:
-        payout = abs(div) / ffo[ult] * 100 + ajuste_payout
+        payout = abs(div) / ffo[ult] * 100
         if not 0 < payout < 300:
             payout = None
     res["payout_calc"] = round(payout, 1) if payout is not None else None
@@ -263,14 +263,14 @@ def calcular(fatos, ajuste_payout=0.0):
     return res
 
 
-def coletar(ticker, contato, cache_dir, ajuste_payout=0.0):
+def coletar(ticker, contato, cache_dir):
     """Retorna dict pronto para gravar no banco."""
     from datetime import datetime
     mapa = mapa_tickers(contato, cache_dir)
     cik = mapa.get(ticker.upper()) or mapa.get(ticker.upper().replace(".", "-"))
     if not cik:
         raise ValueError(f"Ticker {ticker} não encontrado na SEC.")
-    r = calcular(baixar_fatos(cik, contato), ajuste_payout)
+    r = calcular(baixar_fatos(cik, contato))
     return {
         "payout_calc": r["payout_calc"], "div_ebitda_calc": r["div_ebitda_calc"],
         "ffo_positivo_calc": r["ffo_positivo_calc"], "ffo_anos_cresc_calc": r["ffo_anos_cresc_calc"],

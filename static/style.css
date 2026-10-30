@@ -36,3 +36,4 @@ background-size:40px 40px;animation:listras 1s linear infinite;transition:width 
 .contadores{display:flex;gap:32px;margin-top:10px;flex-wrap:wrap}
 sup.calc{color:var(--pri);font-weight:700;margin-left:2px}button:disabled{opacity:.6;cursor:wait}
 label span.calc{color:var(--pri);font-weight:600;margin-left:4px}
+.s-Verificar{background:#e8f0fb;color:#1f5fa8;border:1px dashed #1f5fa8}.obs{color:var(--obs)}

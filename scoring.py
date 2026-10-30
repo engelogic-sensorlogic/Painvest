@@ -17,7 +17,17 @@ GRAU_INVESTIMENTO = RATINGS[:RATINGS.index("BBB-") + 1]
 CONFIG_PADRAO = {
     "retencao_eua": 30.0,          # % retido na fonte (sem tratado Brasil-EUA)
     "contato_sec": "",             # e-mail exigido pela SEC no User-Agent
-    "ajuste_payout_ffo": 5.0,      # p.p. somados ao payout de FFO calculado p/ aproximar o de AFFO
+    # p.p. somados ao payout de FFO calculado para aproximar o de AFFO
+    # (AFFO = FFO − capex de manutenção; em net lease o inquilino paga a manutenção)
+    "ajuste_payout_setor": {
+        "Net Lease - Varejo": 0, "Net Lease - Diversificado": 0, "Cassinos/Experiências": 0,
+        "Self-storage": 3, "Torres": 3, "Florestas/Terras": 2, "Industrial/Logística": 5,
+        "Residencial - Casas/MH": 5, "Outdoors": 5, "Saúde": 6, "Strip Centers": 6,
+        "Residencial - Apartamentos": 8, "Shoppings": 8, "Data Centers": 10, "Hotéis": 10,
+        "Escritórios": 12, "Hipotecas (mREIT)": 0, "Outros": 5,
+    },
+    # Valor CALCULADO fora do limite: True = status "Verificar"; False = reprova
+    "calc_apenas_sinaliza": True,
     "treasury_10a": 4.2,           # % a.a., atualizado automaticamente quando possível
     "filtros": {
         "min_market_cap_bi": 5.0,       # US$ bilhões
@@ -164,19 +174,26 @@ MAPA_CALCULADOS = {
 }
 
 
-def aplicar_calculados(r):
+def ajuste_payout(r, cfg):
+    tabela = cfg.get("ajuste_payout_setor", {})
+    return float(tabela.get(r.get("setor") or "Outros", tabela.get("Outros", 5)))
+
+
+def aplicar_calculados(r, cfg=None):
     r = dict(r)
     r["_calc"] = set()
     for manual, calc in MAPA_CALCULADOS.items():
         if _vazio(r.get(manual)) and not _vazio(r.get(calc)):
             r[manual] = r[calc]
+            if manual == "payout_affo" and cfg:
+                r[manual] = round(r[calc] + ajuste_payout(r, cfg), 1)
             r["_calc"].add(manual)
     return r
 
 
 def avaliar(r, cfg):
     """Avaliação completa de uma REIT."""
-    r = aplicar_calculados(r)
+    r = aplicar_calculados(r, cfg)
     fl = filtros(r, cfg)
     ns = notas(r, cfg)
     pesos = cfg["pesos"]
@@ -188,7 +205,10 @@ def avaliar(r, cfg):
 
     reprovados = [x for x in fl if x[1] is False]
     pendentes = [x for x in fl if x[1] is None]
-    if reprovados:
+    so_calculados = bool(reprovados) and all(str(x[2]).endswith("(calc. SEC)") for x in reprovados)
+    if reprovados and so_calculados and cfg.get("calc_apenas_sinaliza", True):
+        status = "Verificar"
+    elif reprovados:
         status = "Reprovada"
     elif pendentes or not completo:
         status = "Dados pendentes"
@@ -207,7 +227,7 @@ def avaliar(r, cfg):
     }
 
 
-ORDEM_STATUS = {"Candidata": 0, "Observação": 1, "Dados pendentes": 2, "Descarte": 3, "Reprovada": 4}
+ORDEM_STATUS = {"Candidata": 0, "Observação": 1, "Verificar": 2, "Dados pendentes": 3, "Descarte": 4, "Reprovada": 5}
 
 
 def ranquear(reits, cfg):

@@ -18,7 +18,7 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, sen
 import db
 import scoring
 
-VERSAO = "1.1.1"
+VERSAO = "1.1.2"
 PORTA = 5077
 
 app = Flask(__name__, template_folder=db.resource_path("templates"),
@@ -141,7 +141,7 @@ def _coletar_sec(ticker, c):
     """Fundamentos calculados a partir da SEC."""
     import sec
     try:
-        db.salvar(ticker, sec.coletar(ticker, c["contato_sec"], db.DATA_DIR, c["ajuste_payout_ffo"]))
+        db.salvar(ticker, sec.coletar(ticker, c["contato_sec"], db.DATA_DIR))
         return True, None
     except Exception as e:
         db.salvar(ticker, {"sec_erro": _erro(e)})
@@ -264,7 +264,10 @@ def config():
         try:
             c["retencao_eua"] = _num(f["retencao_eua"])
             c["contato_sec"] = (f.get("contato_sec") or "").strip()
-            c["ajuste_payout_ffo"] = _num(f.get("ajuste_payout_ffo") or "0")
+            c["calc_apenas_sinaliza"] = "calc_apenas_sinaliza" in f
+            for i, setor in enumerate(scoring.SETORES):
+                if f"aj_{i}" in f:
+                    c["ajuste_payout_setor"][setor] = _num(f[f"aj_{i}"] or "0")
             c["treasury_10a"] = _num(f["treasury_10a"])
             for k in ["min_market_cap_bi", "min_vol_diario_mi", "max_payout_mensal",
                       "max_payout_trimestral", "max_div_ebitda", "max_inquilino_pct"]:
