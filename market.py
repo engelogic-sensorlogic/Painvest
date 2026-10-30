@@ -108,6 +108,7 @@ def obter_historico(t, ticker, dormir=None, espera=4.0):
         dict(period="max"),
         dict(start="1970-01-01"),
         dict(period="10y"),
+        dict(period="1y"),
     ]
     ultimo_erro = None
     for i, kw in enumerate(tentativas):
@@ -157,6 +158,18 @@ def coletar(ticker, existente=None):
 
     serie = hist["Dividends"] if "Dividends" in hist else []
     divs = [(d.to_pydatetime().replace(tzinfo=None), float(v)) for d, v in serie.items() if v]
+    if dados["anos_listada"] < 11:
+        # Histórico curto (veio de uma tentativa alternativa): busca dividendos completos à parte
+        try:
+            completos = com_retentativa(lambda: t.dividends)
+            if completos is not None and len(completos) > len(divs):
+                divs = [(d.to_pydatetime().replace(tzinfo=None), float(v)) for d, v in completos.items() if v]
+                dados["anos_listada"] = max(dados["anos_listada"],
+                                            round((datetime.now() - divs[0][0]).days / 365.25, 1))
+        except Exception:
+            pass
+        if existente.get("anos_listada"):
+            dados["anos_listada"] = max(dados["anos_listada"], existente["anos_listada"])
     m = analisar_dividendos(divs)
     dados["dy_bruto"] = round(m.pop("div_12m") / preco * 100, 2) if preco else None
     dados.update(m)

@@ -408,3 +408,20 @@ def test_juros_buscado_na_data_exata_com_tag_alternativa():
     comp = r["detalhe"]["ultimo"]["componentes"]
     assert comp["juros"]["tag"] == "InterestExpenseNonoperating"
     assert r["detalhe"]["ultimo"]["ebitda"] == pytest.approx(4 * 1230e6)
+
+
+def test_sem_juros_nao_calcula_alavancagem():
+    fatos = _fatos_sec()
+    del fatos["facts"]["us-gaap"]["InterestExpense"]
+    r = sec.calcular(fatos)
+    assert r["div_ebitda_calc"] is None
+    assert "juros não encontrados" in r["detalhe"]["ultimo"]["base_ebitda"]
+
+
+def test_juros_pelo_fluxo_de_caixa():
+    fatos = _fatos_sec()
+    g = fatos["facts"]["us-gaap"]
+    g["InterestPaidNet"] = g.pop("InterestExpense")
+    r = sec.calcular(fatos)
+    assert r["detalhe"]["ultimo"]["componentes"]["juros"]["tag"] == "InterestPaidNet"
+    assert r["div_ebitda_calc"] == pytest.approx(4.64)

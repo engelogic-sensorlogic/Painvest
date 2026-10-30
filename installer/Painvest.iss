@@ -3,7 +3,7 @@
 
 #define MyAppName "Painvest"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.1.4"
+  #define MyAppVersion "1.1.5"
 #endif
 #define MyAppPublisher "Sensorlogic Serviços Ltda."
 #define MyAppExeName "Painvest.exe"

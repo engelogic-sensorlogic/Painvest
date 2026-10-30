@@ -32,8 +32,10 @@ TAGS = {
                    "AssetImpairmentCharges", "ImpairmentOfLongLivedAssetsToBeDisposedOf"],
     "pref": ["DividendsPreferredStock", "PreferredStockDividendsIncomeStatementImpact",
              "DividendsPreferredStockCash"],
-    "juros": ["InterestExpense", "InterestExpenseNonoperating", "InterestExpenseDebt",
-              "InterestExpenseNet"],
+    # Juros: tags novas (taxonomia 2024+) e, por último, juros pagos no fluxo de caixa
+    "juros": ["InterestExpense", "InterestExpenseNonoperating", "InterestExpenseOperating",
+              "InterestExpenseDebt", "InterestAndDebtExpense", "InterestExpenseNet",
+              "InterestExpenseDebtExcludingAmortization", "InterestPaidNet", "InterestPaid"],
     "impostos": ["IncomeTaxExpenseBenefit"],
     "dividendos": ["PaymentsOfDividendsCommonStock", "PaymentsOfDividends", "DividendsCommonStockCash",
                    "PaymentsOfOrdinaryDividends", "DividendsCommonStock"],
@@ -261,13 +263,17 @@ def calcular(fatos):
             break
     if ebitda is None or ebitda <= 0:
         comp = {k: valor_anual(fatos, k, ult) for k in ("lucro", "juros", "impostos", "da", "ganhos", "impairment")}
-        v = {k: (c[0] or 0.0) for k, c in comp.items()}
-        ebitda = v["lucro"] + v["juros"] + v["impostos"] + v["da"] - v["ganhos"] + v["impairment"]
-        base, quando = f"ano fiscal {ult}", ult
+        if comp["juros"][0] is None:
+            # Sem juros o EBITDA sai subestimado: melhor não calcular do que exibir número enganoso
+            ebitda, base, quando = None, f"não calculado — juros não encontrados no ano fiscal {ult}", ult
+        else:
+            v = {k: (c[0] or 0.0) for k, c in comp.items()}
+            ebitda = v["lucro"] + v["juros"] + v["impostos"] + v["da"] - v["ganhos"] + v["impairment"]
+            base, quando = f"ano fiscal {ult}", ult
     dvd, tag_dvd = divida_total(fatos, quando)
     caixa, _ = valor_instante(fatos, TAGS["caixa"], quando)
     alav = None
-    if dvd and ebitda > 0:
+    if dvd and ebitda and ebitda > 0:
         alav = (dvd - (caixa or 0.0)) / ebitda
         if not 0 <= alav < 30:
             alav = None

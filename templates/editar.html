@@ -86,7 +86,7 @@
     {% endfor %}
   </table>
   {% endif %}
-  <p class="mut">EBITDAre ({{ sec.ultimo.base_ebitda or 'ano fiscal' }}): US$ {{ (sec.ultimo.ebitda/1e6)|n(0) }} mi · Dívida US$ {{ (sec.ultimo.divida/1e6 if sec.ultimo.divida else none)|n(0) }} mi ·
+  <p class="mut">EBITDAre ({{ sec.ultimo.base_ebitda or 'ano fiscal' }}): US$ {{ (sec.ultimo.ebitda/1e6 if sec.ultimo.ebitda else none)|n(0) }} mi · Dívida US$ {{ (sec.ultimo.divida/1e6 if sec.ultimo.divida else none)|n(0) }} mi ·
     Caixa US$ {{ (sec.ultimo.caixa/1e6 if sec.ultimo.caixa else none)|n(0) }} mi. Payout de FFO {{ r.payout_calc|n(1,'%') }} + ajuste do setor (FFO → AFFO), configurável em Metodologia.<br>
     Tags XBRL usadas: {% for k, t in sec.tags.items() if t %}{{ k }}={{ t }}{{ ', ' if not loop.last }}{% endfor %}</p>
   <p class="mut">Aproximação padronizada (definição Nareit). Se divergir do <i>Supplemental Package</i>, digite o valor da empresa no campo manual — ele prevalece.</p>
