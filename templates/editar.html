@@ -13,7 +13,8 @@
       <form method="post" action="{{ url_for('excluir', ticker=r.ticker) }}" onsubmit="return confirm('Excluir {{ r.ticker }}?')"><button class="perigo">Excluir</button></form>
     </div>
   </div>
-  {% if r.erro_coleta %}<p class="falha">Última coleta falhou: {{ r.erro_coleta }}</p>{% endif %}
+  {% if r.erro_coleta %}<p class="falha">Última coleta Yahoo falhou: {{ r.erro_coleta }}</p>{% endif %}
+  {% if r.sec_erro %}<p class="falha">Última coleta SEC falhou: {{ r.sec_erro }}</p>{% endif %}
 </div>
 
 <div class="card">
@@ -36,13 +37,13 @@
   <div class="grid">
     <div><label>Setor</label><select name="setor"><option value="">—</option>
       {% for s in setores %}<option {{ 'selected' if r.setor==s }}>{{ s }}</option>{% endfor %}</select></div>
-    <div><label>AFFO positivo nos últimos 5 anos?</label><select name="affo_positivo_5a">
-      <option value="" {{ 'selected' if r.affo_positivo_5a is none }}>—</option>
+    <div><label>AFFO positivo nos últimos 5 anos? <span class="calc">calc: {{ {1:'Sim',0:'Não'}.get(r.ffo_positivo_calc, '—') }}</span></label><select name="affo_positivo_5a">
+      <option value="" {{ 'selected' if r.affo_positivo_5a is none }}>Usar calculado</option>
       <option value="1" {{ 'selected' if r.affo_positivo_5a==1 }}>Sim</option>
       <option value="0" {{ 'selected' if r.affo_positivo_5a==0 }}>Não</option></select></div>
-    <div><label>Anos com AFFO/ação crescente (0–5)</label><input name="affo_anos_crescimento" value="{{ r.affo_anos_crescimento if r.affo_anos_crescimento is not none else '' }}"></div>
-    <div><label>Payout do AFFO (%)</label><input name="payout_affo" value="{{ r.payout_affo if r.payout_affo is not none else '' }}"></div>
-    <div><label>Dív. líquida / EBITDA (x)</label><input name="div_liq_ebitda" value="{{ r.div_liq_ebitda if r.div_liq_ebitda is not none else '' }}"></div>
+    <div><label>Anos com AFFO/ação crescente (0–5) <span class="calc">calc: {{ r.ffo_anos_cresc_calc if r.ffo_anos_cresc_calc is not none else '—' }}</span></label><input name="affo_anos_crescimento" placeholder="vazio = usar calculado" value="{{ r.affo_anos_crescimento if r.affo_anos_crescimento is not none else '' }}"></div>
+    <div><label>Payout do AFFO (%) <span class="calc">calc: {{ r.payout_calc|n(1,'%') }}</span></label><input name="payout_affo" placeholder="vazio = usar calculado" value="{{ r.payout_affo if r.payout_affo is not none else '' }}"></div>
+    <div><label>Dív. líquida / EBITDA (x) <span class="calc">calc: {{ r.div_ebitda_calc|n(2,'x') }}</span></label><input name="div_liq_ebitda" placeholder="vazio = usar calculado" value="{{ r.div_liq_ebitda if r.div_liq_ebitda is not none else '' }}"></div>
     <div><label>Rating (S&amp;P/Moody's equivalente)</label><select name="rating"><option value="">—</option>
       {% for x in ratings %}<option {{ 'selected' if r.rating==x }}>{{ x }}</option>{% endfor %}</select></div>
     <div><label>Maior inquilino (% da receita)</label><input name="maior_inquilino_pct" value="{{ r.maior_inquilino_pct if r.maior_inquilino_pct is not none else '' }}"></div>
@@ -55,6 +56,28 @@
   <div style="margin-top:12px"><label>Notas</label><textarea name="notas" rows="2">{{ r.notas or '' }}</textarea></div>
   <div style="margin-top:12px"><button>Salvar</button> <a class="btn sec" href="{{ url_for('index') }}">Voltar ao ranking</a></div>
 </form>
+
+{% if sec %}
+<div class="card" style="overflow-x:auto">
+  <h2>Cálculo pela SEC <span class="mut">(10-K anuais · {{ r.sec_atualizado_em }} · valores em US$ milhões)</span></h2>
+  <table>
+    <tr><th>Ano fiscal</th><th class="num">Lucro líquido</th><th class="num">+ D&amp;A</th><th class="num">− Ganhos venda</th>
+      <th class="num">+ Impairment</th><th class="num">= FFO</th><th class="num">FFO/ação (US$)</th><th class="num">Dividendos pagos</th></tr>
+    {% for ano, d in sec.anos.items() %}
+    <tr><td>{{ ano }}</td>
+      <td class="num">{{ (d.lucro/1e6)|n(0) }}</td><td class="num">{{ (d.da/1e6)|n(0) }}</td>
+      <td class="num">{{ (d.ganhos/1e6 if d.ganhos is not none else none)|n(0) }}</td>
+      <td class="num">{{ (d.impairment/1e6 if d.impairment is not none else none)|n(0) }}</td>
+      <td class="num"><b>{{ (d.ffo/1e6)|n(0) }}</b></td><td class="num">{{ d.ffo_acao|n(2) }}</td>
+      <td class="num">{{ (d.dividendos/1e6 if d.dividendos is not none else none)|n(0) }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="mut">Último ano: EBITDAre US$ {{ (sec.ultimo.ebitda/1e6)|n(0) }} mi · Dívida US$ {{ (sec.ultimo.divida/1e6 if sec.ultimo.divida else none)|n(0) }} mi ·
+    Caixa US$ {{ (sec.ultimo.caixa/1e6 if sec.ultimo.caixa else none)|n(0) }} mi. Payout inclui ajuste de +{{ cfg.ajuste_payout_ffo|n(1) }} p.p. (FFO → AFFO).<br>
+    Tags XBRL usadas: {% for k, t in sec.tags.items() if t %}{{ k }}={{ t }}{{ ', ' if not loop.last }}{% endfor %}</p>
+  <p class="mut">Aproximação padronizada (definição Nareit). Se divergir do <i>Supplemental Package</i>, digite o valor da empresa no campo manual — ele prevalece.</p>
+</div>
+{% endif %}
 
 <div class="grid" style="grid-template-columns:1fr 1fr">
 <div class="card">

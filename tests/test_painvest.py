@@ -182,3 +182,86 @@ def test_config_rejeita_pesos_errados(cliente):
     form.update({f"freq_{k}": str(v) for k, v in c["notas_frequencia"].items()})
     resp = cliente.post("/config", data=form, follow_redirects=True)
     assert "soma dos pesos" in resp.get_data(as_text=True)
+
+
+# ---------------- v1.1: SEC e progresso ----------------
+import sec  # noqa: E402
+
+
+def _fatos_sec():
+    """JSON no formato companyfacts da SEC (simplificado)."""
+    def anual(valores, unidade="USD"):
+        itens = []
+        for ano, val in valores.items():
+            for filed in (f"{ano + 1}-02-20", f"{ano + 2}-02-20"):  # 10-K do ano e comparativo do seguinte
+                itens.append({"start": f"{ano}-01-01", "end": f"{ano}-12-31", "val": val,
+                              "form": "10-K", "fp": "FY", "filed": filed})
+            itens.append({"start": f"{ano}-01-01", "end": f"{ano}-03-31", "val": val / 4,  # trimestre: ignorar
+                          "form": "10-Q", "filed": f"{ano}-05-01"})
+        return {"units": {unidade: itens}}
+
+    def instante(valores):
+        return {"units": {"USD": [{"end": f"{a}-12-31", "val": v, "form": "10-K", "filed": f"{a + 1}-02-20"}
+                                  for a, v in valores.items()]}}
+
+    anos = range(2019, 2026)
+    return {"facts": {"us-gaap": {
+        "NetIncomeLoss": anual({a: 800e6 + 50e6 * (a - 2019) for a in anos}),
+        "DepreciationAndAmortization": anual({a: 1000e6 for a in anos}),
+        "GainsLossesOnSalesOfInvestmentRealEstate": anual({a: 100e6 for a in anos}),
+        "PaymentsOfDividendsCommonStock": anual({a: 1300e6 for a in anos}),
+        "InterestExpense": anual({a: 500e6 for a in anos}),
+        "WeightedAverageNumberOfDilutedSharesOutstanding": anual({a: 1e9 for a in anos}, "shares"),
+        "LongTermDebt": instante({2025: 12_000e6}),
+        "UnsecuredDebt": instante({2025: 9_000e6}),       # menor que o total: deve ser ignorada
+        "CashAndCashEquivalentsAtCarryingValue": instante({2025: 400e6}),
+    }}}
+
+
+def test_sec_calculo_ffo_payout_alavancagem():
+    r = sec.calcular(_fatos_sec(), ajuste_payout=5.0)
+    assert r["ffo_ano_ref"] == 2025
+    # FFO 2025 = 1100 + 1000 - 100 = 2000 mi ; payout = 1300/2000 = 65% (+5 p.p.)
+    assert r["payout_calc"] == pytest.approx(70.0)
+    # EBITDAre = 1100 + 500 + 1000 - 100 = 2500 ; (12000 - 400) / 2500 = 4,64x
+    assert r["div_ebitda_calc"] == pytest.approx(4.64)
+    assert r["ffo_positivo_calc"] == 1
+    assert r["ffo_anos_cresc_calc"] == 5  # FFO/ação cresce nos 5 anos da janela
+    assert r["detalhe"]["anos"][2025]["ffo"] == pytest.approx(2000e6)
+
+
+def test_sec_sem_dados_essenciais_gera_erro():
+    with pytest.raises(ValueError):
+        sec.calcular({"facts": {"us-gaap": {}}})
+
+
+def test_manual_prevalece_sobre_calculado():
+    r = dict(COMPLETA, payout_affo=None, payout_calc=72.0, div_liq_ebitda=5.0, div_ebitda_calc=8.0)
+    av = scoring.avaliar(r, cfg())
+    assert av["efetivo"]["payout_affo"] == 72.0 and "payout_affo" in av["origem_calc"]
+    assert av["efetivo"]["div_liq_ebitda"] == 5.0 and "div_liq_ebitda" not in av["origem_calc"]
+
+
+def test_atualizacao_com_progresso(cliente, monkeypatch):
+    import app as appmod
+    import market
+    db.salvar("AAA", {"setor": "Self-storage"})
+    db.salvar("BBB", {"setor": "Self-storage"})
+    monkeypatch.setattr(market, "treasury_10a", lambda: 4.5)
+    monkeypatch.setattr(market, "coletar", lambda t: (_ for _ in ()).throw(RuntimeError("offline")) if t == "BBB"
+                        else {"preco": 10.0, "dy_bruto": 5.0})
+    monkeypatch.setattr(sec, "mapa_tickers", lambda *a, **k: {})
+    monkeypatch.setattr(sec, "coletar", lambda t, *a, **k: {"payout_calc": 70.0, "sec_erro": None})
+    monkeypatch.setattr(appmod.time, "sleep", lambda s: None)
+    c = cfg()
+    c["contato_sec"] = "teste@exemplo.com"
+    db.gravar_config(c)
+
+    appmod._tarefa_atualizacao(["AAA", "BBB"])  # execução síncrona para o teste
+    p = cliente.get("/atualizar/status").get_json()
+    assert p["concluido"] and not p["rodando"]
+    assert p["feito"] == p["total"] == 1 + 2 + 1 + 2
+    assert (p["ok"], p["falhas"], p["sec_ok"]) == (1, 1, 2)
+    assert db.obter("AAA")["payout_calc"] == 70.0
+    assert "offline" in db.obter("BBB")["erro_coleta"]
+    assert db.ler_config(scoring.CONFIG_PADRAO)["treasury_10a"] == 4.5

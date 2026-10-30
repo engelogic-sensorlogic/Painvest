@@ -26,7 +26,8 @@ Triagem de REITs americanos com metodologia própria, inspirada nos filtros do �
 ## Dados
 
 - **Automáticos (Yahoo Finance / yfinance):** preço, valor de mercado, volume, DY 12m, frequência, meses de pagamento, CAGR 5a, anos sem corte, anos de listagem, Treasury 10a.
-- **Manuais:** AFFO, payout, dív./EBITDA, rating, maior inquilino, P/AFFO — do *Supplemental Package* trimestral (site de RI) e S&P/Moody's.
+- **Calculados pela SEC (EDGAR XBRL, 10-K anuais):** FFO (definição Nareit: lucro + D&A − ganhos na venda + impairments − dividendos preferenciais), payout do FFO (+ ajuste configurável de 5 p.p. para aproximar o AFFO), FFO positivo/crescente em 5 anos, dívida líquida/EBITDAre. Requer e-mail de contato em *Metodologia* (exigência da SEC). A ficha da REIT mostra o cálculo ano a ano e as tags XBRL usadas.
+- **Manuais:** rating, maior inquilino e P/AFFO. Qualquer valor digitado nos campos de AFFO/payout/dívida **prevalece** sobre o calculado.
 - A detecção de corte usa o total anual de dividendos; dividendos extraordinários podem gerar falso corte → use o campo de correção manual.
 
 ## Uso em desenvolvimento

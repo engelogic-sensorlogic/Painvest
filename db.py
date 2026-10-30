@@ -28,6 +28,10 @@ CAMPOS_AUTO = {
     "dy_bruto": "REAL", "frequencia": "TEXT", "pagamentos_12m": "INTEGER",
     "meses_pagamento": "TEXT", "cagr_div_5a": "REAL", "anos_sem_corte": "INTEGER",
     "anos_listada": "REAL", "atualizado_em": "TEXT", "erro_coleta": "TEXT",
+    # Calculados a partir da SEC (EDGAR XBRL)
+    "payout_calc": "REAL", "div_ebitda_calc": "REAL", "ffo_positivo_calc": "INTEGER",
+    "ffo_anos_cresc_calc": "INTEGER", "ffo_ano_ref": "INTEGER", "sec_detalhe": "TEXT",
+    "sec_atualizado_em": "TEXT", "sec_erro": "TEXT",
 }
 CAMPOS_MANUAIS = {
     "setor": "TEXT", "affo_positivo_5a": "INTEGER", "affo_anos_crescimento": "INTEGER",

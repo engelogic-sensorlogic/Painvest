@@ -13,11 +13,28 @@
         <div><label>Adicionar tickers (separe por vírgula)</label><input name="tickers" placeholder="ex.: FRT, REG"></div>
         <button class="sec">Adicionar</button>
       </form>
-      <form method="post" action="{{ url_for('atualizar_todos') }}" onsubmit="this.querySelector('button').innerText='Atualizando...'">
-        <button>Atualizar cotações</button>
-      </form>
+      <button id="btnAtualizar" type="button" onclick="iniciarAtualizacao()">Atualizar cotações</button>
     </div>
   </div>
+  {% if not cfg.contato_sec %}<p class="mut" style="margin:10px 0 0">Para calcular FFO, payout e dívida
+    automaticamente pela SEC, informe seu e-mail de contato em <a href="{{ url_for('config') }}">Metodologia</a>.</p>{% endif %}
+</div>
+
+<div class="card progresso" id="progresso" hidden>
+  <div class="linha" style="justify-content:space-between;align-items:baseline">
+    <h2 id="pEtapa">Atualizando...</h2>
+    <span class="nota" id="pPct">0%</span>
+  </div>
+  <div class="bargraph"><i id="pBarra"></i></div>
+  <div class="linha" style="justify-content:space-between;margin-top:8px">
+    <span id="pTicker" class="mut"></span>
+    <span class="mut"><span id="pPassos">0/0</span> etapas</span>
+  </div>
+  <div class="contadores">
+    <div><label>Cotações (Yahoo)</label><span class="ok" id="pOk">0 ok</span> · <span class="falha" id="pFalhas">0 falhas</span></div>
+    <div id="pSecBox"><label>Fundamentos (SEC)</label><span class="ok" id="pSecOk">0 ok</span> · <span class="falha" id="pSecFalhas">0 falhas</span></div>
+  </div>
+  <div id="pAvisos" class="mut"></div>
 </div>
 
 <div class="card" style="overflow-x:auto">
@@ -25,7 +42,7 @@
   <thead><tr>
     <th>#</th><th>Ticker</th><th>Setor</th><th>Status</th><th class="num">Nota</th>
     <th>Frequência</th><th class="num">DY bruto</th><th class="num">DY líquido</th>
-    <th class="num">CAGR div. 5a</th><th class="num">Payout AFFO</th><th class="num">Dív/EBITDA</th>
+    <th class="num">CAGR div. 5a</th><th class="num">Payout</th><th class="num">Dív/EBITDA</th>
     <th>Rating</th><th>Motivo / pendências</th>
   </tr></thead>
   <tbody>
@@ -42,11 +59,12 @@
       <td class="num">{{ r.dy_bruto|n(2, '%') }}</td>
       <td class="num">{{ a.yield_liquido|n(2, '%') }}</td>
       <td class="num">{{ r.cagr_div_5a|n(1, '%') }}</td>
-      <td class="num">{{ r.payout_affo|n(0, '%') }}</td>
-      <td class="num">{{ r.div_liq_ebitda|n(1, 'x') }}</td>
+      <td class="num">{{ a.efetivo.payout_affo|n(0, '%') }}{% if 'payout_affo' in a.origem_calc %}<sup class="calc" title="Calculado (FFO via SEC)">c</sup>{% endif %}</td>
+      <td class="num">{{ a.efetivo.div_liq_ebitda|n(1, 'x') }}{% if 'div_liq_ebitda' in a.origem_calc %}<sup class="calc" title="Calculado via SEC">c</sup>{% endif %}</td>
       <td>{{ r.rating or '—' }}</td>
       <td class="mut">
-        {% if r.erro_coleta %}<span class="falha">Erro na coleta</span>{% endif %}
+        {% if r.erro_coleta %}<div class="falha">Erro Yahoo</div>{% endif %}
+        {% if r.sec_erro %}<div class="falha" title="{{ r.sec_erro }}">Erro SEC</div>{% endif %}
         {% for f in a.reprovados[:2] %}<div class="falha">✗ {{ f[0] }} ({{ f[2] }})</div>{% endfor %}
         {% if not a.reprovados and a.pendentes %}{{ a.pendentes|length }} campo(s) a preencher{% endif %}
       </td>
@@ -56,10 +74,61 @@
   {% endfor %}
   </tbody>
 </table>
-<p class="mut">* Nota parcial: calculada só com os critérios que já têm dados.</p>
+<p class="mut">* Nota parcial: calculada só com os critérios que já têm dados. · <sup class="calc">c</sup> valor calculado pela SEC (FFO); um valor digitado na ficha da REIT prevalece.</p>
 </div>
 
-<div class="dica">Fluxo de uso: 1) clique em <b>Atualizar cotações</b> (dados automáticos via Yahoo Finance);
-2) abra cada REIT e preencha os campos manuais a partir do <i>Supplemental Package</i> trimestral (site de RI) e do rating S&amp;P/Moody's;
+<div class="dica">Fluxo de uso: 1) clique em <b>Atualizar cotações</b> (Yahoo Finance + SEC);
+2) abra cada REIT e preencha <b>rating</b> e <b>maior inquilino</b> (e, se quiser, corrija os valores calculados com os do <i>Supplemental Package</i>);
 3) o ranking aplica os filtros eliminatórios e a matriz ponderada.</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let timer = null;
+
+function mostrar(p) {
+  $('progresso').hidden = false;
+  const pct = p.total ? Math.round(100 * p.feito / p.total) : 0;
+  $('pBarra').style.width = pct + '%';
+  $('pBarra').className = p.concluido ? ((p.falhas || p.sec_falhas) ? 'aviso' : 'fim') : '';
+  $('pPct').textContent = pct + '%';
+  $('pEtapa').textContent = p.etapa || 'Atualizando...';
+  $('pTicker').textContent = p.ticker ? 'Processando: ' + p.ticker : '';
+  $('pPassos').textContent = (p.feito || 0) + '/' + (p.total || 0);
+  $('pOk').textContent = (p.ok || 0) + ' ok';
+  $('pFalhas').textContent = (p.falhas || 0) + ' falhas';
+  $('pSecOk').textContent = (p.sec_ok || 0) + ' ok';
+  $('pSecFalhas').textContent = (p.sec_falhas || 0) + ' falhas';
+  $('pSecBox').style.opacity = p.usar_sec === false ? .4 : 1;
+  $('pAvisos').innerHTML = (p.avisos || []).map(a => '<div>⚠ ' + a + '</div>').join('');
+}
+
+async function consultar() {
+  try {
+    const p = await (await fetch('{{ url_for("atualizar_status") }}')).json();
+    if (p.total) mostrar(p);
+    if (p.rodando) { timer = setTimeout(consultar, 400); return; }
+    $('btnAtualizar').disabled = false;
+    $('btnAtualizar').textContent = 'Atualizar cotações';
+    if (p.concluido && timer !== null) {
+      $('pEtapa').textContent = 'Concluído — recarregando o ranking...';
+      setTimeout(() => location.reload(), 1500);
+    }
+    timer = null;
+  } catch (e) { timer = setTimeout(consultar, 1000); }
+}
+
+async function iniciarAtualizacao() {
+  $('btnAtualizar').disabled = true;
+  $('btnAtualizar').textContent = 'Atualizando...';
+  mostrar({total: 1, feito: 0, etapa: 'Iniciando...'});
+  await fetch('{{ url_for("atualizar_todos") }}', {method: 'POST'});
+  timer = 0;
+  consultar();
+}
+
+// Se uma atualização já estiver em andamento (ex.: página recarregada), retoma a barra
+fetch('{{ url_for("atualizar_status") }}').then(r => r.json()).then(p => {
+  if (p.rodando) { $('btnAtualizar').disabled = true; $('btnAtualizar').textContent = 'Atualizando...'; timer = 0; consultar(); }
+});
+</script>
 {% endblock %}

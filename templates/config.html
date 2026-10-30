@@ -5,6 +5,8 @@
 <div class="card">
   <h1>Metodologia</h1>
   <div class="grid">
+    <div><label>E-mail de contato para a SEC (obrigatório para coleta de FFO)</label><input name="contato_sec" type="email" value="{{ cfg.contato_sec }}" placeholder="seu@email.com.br"></div>
+    <div><label>Ajuste payout FFO → AFFO (p.p.)</label><input name="ajuste_payout_ffo" value="{{ cfg.ajuste_payout_ffo }}"></div>
     <div><label>Retenção nos EUA sobre dividendos (%)</label><input name="retencao_eua" value="{{ cfg.retencao_eua }}"></div>
     <div><label>Treasury 10 anos (% a.a.) — atualizado com as cotações</label><input name="treasury_10a" value="{{ cfg.treasury_10a }}"></div>
     <div><label>Nota mínima para "Candidata"</label><input name="nota_compra" value="{{ cfg.nota_compra }}"></div>
@@ -14,6 +16,7 @@
 
 <div class="card">
   <h2>Etapa 1 — Filtros eliminatórios</h2>
+  <p class="mut">A SEC exige identificação (e-mail) em cada consulta automática; o e-mail fica só no seu computador e é enviado apenas à SEC.</p>
   <div class="grid">
     <div><label>Valor de mercado mínimo (US$ bi)</label><input name="min_market_cap_bi" value="{{ cfg.filtros.min_market_cap_bi }}"></div>
     <div><label>Volume médio diário mínimo (US$ mi)</label><input name="min_vol_diario_mi" value="{{ cfg.filtros.min_vol_diario_mi }}"></div>

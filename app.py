@@ -11,12 +11,14 @@ import threading
 import webbrowser
 from datetime import datetime
 
-from flask import Flask, flash, redirect, render_template, request, send_file, url_for
+import time
+
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
 
 import db
 import scoring
 
-VERSAO = "1.0.1"
+VERSAO = "1.1.0"
 PORTA = 5077
 
 app = Flask(__name__, template_folder=db.resource_path("templates"),
@@ -97,7 +99,8 @@ def editar(ticker):
         flash(f"{ticker} não cadastrado.", "erro")
         return redirect(url_for("index"))
     c = cfg()
-    return render_template("editar.html", r=r, av=scoring.avaliar(r, c), cfg=c,
+    detalhe_sec = json.loads(r["sec_detalhe"]) if r.get("sec_detalhe") else None
+    return render_template("editar.html", r=r, av=scoring.avaliar(r, c), cfg=c, sec=detalhe_sec,
                            setores=scoring.SETORES, ratings=scoring.RATINGS)
 
 
@@ -119,41 +122,118 @@ def excluir(ticker):
     return redirect(url_for("index"))
 
 
+def _erro(e):
+    return f"{type(e).__name__}: {e}"[:300]
+
+
 def _coletar(ticker):
+    """Cotações e dividendos (Yahoo Finance)."""
     import market
     try:
         db.salvar(ticker, market.coletar(ticker))
         return True
     except Exception as e:  # sem internet, ticker inválido etc.
-        db.salvar(ticker, {"erro_coleta": f"{type(e).__name__}: {e}"[:200]})
+        db.salvar(ticker, {"erro_coleta": _erro(e)})
         return False
+
+
+def _coletar_sec(ticker, c):
+    """Fundamentos calculados a partir da SEC."""
+    import sec
+    try:
+        db.salvar(ticker, sec.coletar(ticker, c["contato_sec"], db.DATA_DIR, c["ajuste_payout_ffo"]))
+        return True
+    except Exception as e:
+        db.salvar(ticker, {"sec_erro": _erro(e)})
+        return False
+
+
+# ---------- Atualização em segundo plano com progresso ----------
+PROGRESSO = {"rodando": False}
+_trava = threading.Lock()
+
+
+def _set(**kw):
+    with _trava:
+        PROGRESSO.update(kw)
+
+
+def _tarefa_atualizacao(tickers):
+    import market
+    import sec
+    c = cfg()
+    usar_sec = bool((c.get("contato_sec") or "").strip())
+    total = 1 + len(tickers) + ((1 + len(tickers)) if usar_sec else 0)
+    _set(rodando=True, total=total, feito=0, ok=0, falhas=0, sec_ok=0, sec_falhas=0,
+         etapa="Treasury 10 anos", ticker="", avisos=[], usar_sec=usar_sec, concluido=False)
+    avisos = []
+    try:
+        try:
+            c["treasury_10a"] = market.treasury_10a()
+            db.gravar_config(c)
+        except Exception:
+            avisos.append("Treasury 10 anos não atualizado (mantido o valor da configuração).")
+        _set(feito=1)
+
+        for t in tickers:
+            _set(etapa="Cotações e dividendos (Yahoo Finance)", ticker=t)
+            ok = _coletar(t)
+            with _trava:
+                PROGRESSO["ok" if ok else "falhas"] += 1
+                PROGRESSO["feito"] += 1
+
+        if usar_sec:
+            _set(etapa="Base de empresas da SEC", ticker="")
+            try:
+                sec.mapa_tickers(c["contato_sec"], db.DATA_DIR)
+            except Exception as e:
+                avisos.append(f"SEC indisponível: {_erro(e)}")
+                usar_sec = False
+            _set(feito=PROGRESSO["feito"] + 1)
+            for t in tickers:
+                _set(etapa="Fundamentos — FFO, payout, dívida (SEC)", ticker=t)
+                if usar_sec:
+                    ok = _coletar_sec(t, c)
+                    time.sleep(0.15)  # limite de requisições da SEC
+                else:
+                    ok = False
+                with _trava:
+                    PROGRESSO["sec_ok" if ok else "sec_falhas"] += 1
+                    PROGRESSO["feito"] += 1
+        else:
+            avisos.append("Coleta SEC desativada: informe seu e-mail de contato em Metodologia.")
+    finally:
+        _set(rodando=False, concluido=True, etapa="Concluído", ticker="", avisos=avisos)
 
 
 @app.post("/atualizar")
 def atualizar_todos():
-    import market
-    c = cfg()
-    try:
-        c["treasury_10a"] = market.treasury_10a()
-        db.gravar_config(c)
-    except Exception:
-        flash("Não foi possível atualizar o Treasury 10 anos; mantido o valor da configuração.", "erro")
-    ok = falhas = 0
-    for r in db.listar():
-        if _coletar(r["ticker"]):
-            ok += 1
-        else:
-            falhas += 1
-    flash(f"Atualização concluída: {ok} ok, {falhas} com falha.", "ok" if not falhas else "erro")
-    return redirect(url_for("index"))
+    with _trava:
+        if PROGRESSO.get("rodando"):
+            return jsonify({"iniciado": False, "motivo": "Atualização já em andamento."})
+        PROGRESSO.update(rodando=True, total=1, feito=0, etapa="Iniciando", concluido=False)
+    tickers = [r["ticker"] for r in db.listar()]
+    threading.Thread(target=_tarefa_atualizacao, args=(tickers,), daemon=True).start()
+    return jsonify({"iniciado": True})
+
+
+@app.get("/atualizar/status")
+def atualizar_status():
+    with _trava:
+        return jsonify(dict(PROGRESSO))
 
 
 @app.post("/atualizar/<ticker>")
 def atualizar_um(ticker):
-    if _coletar(ticker.upper()):
-        flash(f"{ticker.upper()} atualizado.", "ok")
-    else:
-        flash(f"Falha ao coletar {ticker.upper()}. Verifique a internet e o ticker.", "erro")
+    ticker = ticker.upper()
+    ok = _coletar(ticker)
+    c = cfg()
+    msg = f"{ticker}: cotações {'ok' if ok else 'com falha'}"
+    if (c.get("contato_sec") or "").strip():
+        ok_sec = _coletar_sec(ticker, c)
+        msg += f" · SEC {'ok' if ok_sec else 'com falha'}"
+        ok = ok and ok_sec
+    flash(msg + ".", "ok" if ok else "erro")
     return redirect(request.referrer or url_for("index"))
 
 
@@ -175,6 +255,8 @@ def config():
         f = request.form
         try:
             c["retencao_eua"] = _num(f["retencao_eua"])
+            c["contato_sec"] = (f.get("contato_sec") or "").strip()
+            c["ajuste_payout_ffo"] = _num(f.get("ajuste_payout_ffo") or "0")
             c["treasury_10a"] = _num(f["treasury_10a"])
             for k in ["min_market_cap_bi", "min_vol_diario_mi", "max_payout_mensal",
                       "max_payout_trimestral", "max_div_ebitda", "max_inquilino_pct"]:

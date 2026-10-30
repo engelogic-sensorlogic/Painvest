@@ -16,6 +16,8 @@ GRAU_INVESTIMENTO = RATINGS[:RATINGS.index("BBB-") + 1]
 
 CONFIG_PADRAO = {
     "retencao_eua": 30.0,          # % retido na fonte (sem tratado Brasil-EUA)
+    "contato_sec": "",             # e-mail exigido pela SEC no User-Agent
+    "ajuste_payout_ffo": 5.0,      # p.p. somados ao payout de FFO calculado p/ aproximar o de AFFO
     "treasury_10a": 4.2,           # % a.a., atualizado automaticamente quando possível
     "filtros": {
         "min_market_cap_bi": 5.0,       # US$ bilhões
@@ -105,16 +107,20 @@ def filtros(r, cfg):
     freq = frequencia_efetiva(r)
     max_payout = f["max_payout_mensal"] if freq == "Mensal" else f["max_payout_trimestral"]
 
-    add("AFFO positivo 5 anos", r.get("affo_positivo_5a"), lambda v: int(v) == 1, "Informar (Supplemental)")
-    add(f"AFFO/ação crescente ≥ {f['min_affo_anos_crescimento']} de 5 anos", r.get("affo_anos_crescimento"),
-        lambda v: int(v) >= f["min_affo_anos_crescimento"], f"{r.get('affo_anos_crescimento') or '—'} anos")
+    calc = r.get("_calc", set())
+    tag = lambda campo: " (calc. SEC)" if campo in calc else ""
+    add("AFFO/FFO positivo 5 anos", r.get("affo_positivo_5a"), lambda v: int(v) == 1,
+        {1: "Sim", 0: "Não"}.get(r.get("affo_positivo_5a"), "—") + tag("affo_positivo_5a"))
+    add(f"AFFO/FFO por ação crescente ≥ {f['min_affo_anos_crescimento']} de 5 anos", r.get("affo_anos_crescimento"),
+        lambda v: int(v) >= f["min_affo_anos_crescimento"],
+        f"{r.get('affo_anos_crescimento') if not _vazio(r.get('affo_anos_crescimento')) else '—'} anos" + tag("affo_anos_crescimento"))
     asc = anos_sem_corte_efetivo(r)
     add(f"Sem corte de dividendo ≥ {f['min_anos_sem_corte']} anos", asc,
         lambda v: int(v) >= f["min_anos_sem_corte"], f"{asc if not _vazio(asc) else '—'} anos")
     add(f"Payout AFFO ≤ {max_payout:.0f}%", r.get("payout_affo"), lambda v: v <= max_payout,
-        f"{r.get('payout_affo') if not _vazio(r.get('payout_affo')) else '—'}%")
+        f"{r.get('payout_affo') if not _vazio(r.get('payout_affo')) else '—'}%" + tag("payout_affo"))
     add(f"Dív. líq./EBITDA ≤ {f['max_div_ebitda']}x", r.get("div_liq_ebitda"),
-        lambda v: v <= f["max_div_ebitda"], f"{r.get('div_liq_ebitda') or '—'}x")
+        lambda v: v <= f["max_div_ebitda"], f"{r.get('div_liq_ebitda') or '—'}x" + tag("div_liq_ebitda"))
     if f.get("exigir_grau_investimento"):
         add("Rating grau de investimento", r.get("rating"), lambda v: v in GRAU_INVESTIMENTO,
             r.get("rating") or "—")
@@ -151,8 +157,26 @@ def notas(r, cfg):
     return n
 
 
+# Campo manual -> campo calculado (SEC). O valor manual, quando preenchido, prevalece.
+MAPA_CALCULADOS = {
+    "affo_positivo_5a": "ffo_positivo_calc", "affo_anos_crescimento": "ffo_anos_cresc_calc",
+    "payout_affo": "payout_calc", "div_liq_ebitda": "div_ebitda_calc",
+}
+
+
+def aplicar_calculados(r):
+    r = dict(r)
+    r["_calc"] = set()
+    for manual, calc in MAPA_CALCULADOS.items():
+        if _vazio(r.get(manual)) and not _vazio(r.get(calc)):
+            r[manual] = r[calc]
+            r["_calc"].add(manual)
+    return r
+
+
 def avaliar(r, cfg):
     """Avaliação completa de uma REIT."""
+    r = aplicar_calculados(r)
     fl = filtros(r, cfg)
     ns = notas(r, cfg)
     pesos = cfg["pesos"]
@@ -179,6 +203,7 @@ def avaliar(r, cfg):
         "filtros": fl, "notas": ns, "nota": nota, "nota_completa": completo,
         "status": status, "reprovados": reprovados, "pendentes": pendentes,
         "yield_liquido": yield_liquido(r, cfg), "frequencia": frequencia_efetiva(r),
+        "efetivo": {k: r.get(k) for k in MAPA_CALCULADOS}, "origem_calc": r["_calc"],
     }
 
 
