@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block titulo %}Backup{% endblock %}
+{% block conteudo %}
+<div class="card">
+  <h1>Backup e restauração</h1>
+  <p class="mut">Banco de dados local: {{ db_path }}</p>
+  <h2>Exportar</h2>
+  <p>Gera um arquivo <b>.json</b> com todas as REITs, dados manuais e a configuração da metodologia.
+    Guarde-o para restaurar numa instalação nova.</p>
+  <a class="btn" href="{{ url_for('backup_exportar') }}">Exportar backup</a>
+</div>
+<div class="card">
+  <h2>Restaurar</h2>
+  <p class="falha">Atenção: a restauração substitui todos os dados atuais.</p>
+  <form method="post" action="{{ url_for('backup_restaurar') }}" enctype="multipart/form-data" class="linha"
+        onsubmit="return confirm('Substituir todos os dados atuais pelo backup?')">
+    <div><label>Arquivo de backup (.json)</label><input type="file" name="arquivo" accept=".json"></div>
+    <button>Restaurar</button>
+  </form>
+</div>
+{% endblock %}

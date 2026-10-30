@@ -1,0 +1,30 @@
+:root{--bg:#f5f6f8;--card:#fff;--txt:#1d2433;--mut:#6b7385;--borda:#dfe3ea;--pri:#1f5fa8;
+--ok:#1e8a4c;--okbg:#e4f4ea;--obs:#a86b00;--obsbg:#fdf1dc;--ruim:#b3261e;--ruimbg:#fbe6e4;--pend:#55607a;--pendbg:#eceff4}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--txt)}
+header{background:#14233c;color:#fff;padding:10px 20px;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+header .logo{margin-right:12px;font-weight:700;font-size:18px;letter-spacing:.5px}header .logo span{color:#7fb2ff}
+header nav a{color:#cfdbef;text-decoration:none;margin-right:16px}header nav a:hover{color:#fff}
+header form{margin-left:auto}main{max-width:1280px;margin:0 auto;padding:18px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:8px;padding:16px;margin-bottom:16px}
+h1{font-size:20px;margin:0 0 12px}h2{font-size:16px;margin:0 0 10px}
+table{border-collapse:collapse;width:100%}th,td{padding:7px 8px;border-bottom:1px solid var(--borda);text-align:left;vertical-align:middle}
+th{font-size:12px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}tr:hover td{background:#fafbfd}
+a{color:var(--pri)}.mut{color:var(--mut);font-size:12px}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;white-space:nowrap}
+.s-Candidata{background:var(--okbg);color:var(--ok)}.s-Observação{background:var(--obsbg);color:var(--obs)}
+.s-Reprovada,.s-Descarte{background:var(--ruimbg);color:var(--ruim)}.s-Dados-pendentes{background:var(--pendbg);color:var(--pend)}
+.tag.mensal{background:#e3edfb;color:var(--pri)}
+.nota{font-weight:700;font-size:15px}.barra{height:6px;background:var(--borda);border-radius:3px;width:70px;display:inline-block;vertical-align:middle;margin-left:6px}
+.barra i{display:block;height:100%;border-radius:3px;background:var(--pri)}
+button,.btn{background:var(--pri);color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;text-decoration:none;display:inline-block}
+button.sec,.btn.sec{background:#fff;color:var(--pri);border:1px solid var(--pri)}button.perigo{background:var(--ruim)}
+input,select,textarea{font:inherit;padding:6px 8px;border:1px solid var(--borda);border-radius:6px;background:#fff;width:100%}
+label{display:block;font-size:12px;color:var(--mut);margin-bottom:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.flash{padding:9px 12px;border-radius:6px;margin-bottom:12px}.flash.ok{background:var(--okbg);color:var(--ok)}.flash.erro{background:var(--ruimbg);color:var(--ruim)}
+.ok{color:var(--ok)}.falha{color:var(--ruim)}.pend{color:var(--pend)}
+.linha{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.linha>*{flex:0 0 auto}
+.cal td{text-align:center}.cal td.p{background:var(--okbg);color:var(--ok);font-weight:700}
+.dica{background:#eef4fd;border-left:3px solid var(--pri);padding:10px 12px;border-radius:4px;font-size:13px}
+footer{text-align:center;color:var(--mut);font-size:12px;padding:20px}

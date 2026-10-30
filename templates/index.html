@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block titulo %}Ranking{% endblock %}
+{% block conteudo %}
+<div class="card">
+  <div class="linha" style="justify-content:space-between">
+    <div>
+      <h1>Ranking de REITs</h1>
+      <div class="mut">Treasury 10 anos: {{ cfg.treasury_10a|n }}% · Retenção EUA: {{ cfg.retencao_eua|n(0) }}% ·
+        Compra ≥ {{ cfg.nota_compra|n(1) }} · Observação ≥ {{ cfg.nota_observacao|n(1) }}</div>
+    </div>
+    <div class="linha">
+      <form method="post" action="{{ url_for('novo') }}" class="linha">
+        <div><label>Adicionar tickers (separe por vírgula)</label><input name="tickers" placeholder="ex.: FRT, REG"></div>
+        <button class="sec">Adicionar</button>
+      </form>
+      <form method="post" action="{{ url_for('atualizar_todos') }}" onsubmit="this.querySelector('button').innerText='Atualizando...'">
+        <button>Atualizar cotações</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="overflow-x:auto">
+<table>
+  <thead><tr>
+    <th>#</th><th>Ticker</th><th>Setor</th><th>Status</th><th class="num">Nota</th>
+    <th>Frequência</th><th class="num">DY bruto</th><th class="num">DY líquido</th>
+    <th class="num">CAGR div. 5a</th><th class="num">Payout AFFO</th><th class="num">Dív/EBITDA</th>
+    <th>Rating</th><th>Motivo / pendências</th>
+  </tr></thead>
+  <tbody>
+  {% for r, a in itens %}
+    <tr>
+      <td class="mut">{{ loop.index }}</td>
+      <td><a href="{{ url_for('editar', ticker=r.ticker) }}"><b>{{ r.ticker }}</b></a>
+        <div class="mut">{{ (r.nome or '')[:28] }}</div></td>
+      <td class="mut">{{ r.setor or '—' }}</td>
+      <td><span class="tag s-{{ a.status.replace(' ', '-') }}">{{ a.status }}</span></td>
+      <td class="num">{% if a.nota is not none %}<span class="nota">{{ a.nota|n(1) }}</span>{% if not a.nota_completa %}<span class="mut">*</span>{% endif %}
+        <span class="barra"><i style="width:{{ (a.nota*10)|round }}%"></i></span>{% else %}—{% endif %}</td>
+      <td>{% if a.frequencia %}<span class="tag {{ 'mensal' if a.frequencia=='Mensal' }}">{{ a.frequencia }}</span>{% else %}—{% endif %}</td>
+      <td class="num">{{ r.dy_bruto|n(2, '%') }}</td>
+      <td class="num">{{ a.yield_liquido|n(2, '%') }}</td>
+      <td class="num">{{ r.cagr_div_5a|n(1, '%') }}</td>
+      <td class="num">{{ r.payout_affo|n(0, '%') }}</td>
+      <td class="num">{{ r.div_liq_ebitda|n(1, 'x') }}</td>
+      <td>{{ r.rating or '—' }}</td>
+      <td class="mut">
+        {% if r.erro_coleta %}<span class="falha">Erro na coleta</span>{% endif %}
+        {% for f in a.reprovados[:2] %}<div class="falha">✗ {{ f[0] }} ({{ f[2] }})</div>{% endfor %}
+        {% if not a.reprovados and a.pendentes %}{{ a.pendentes|length }} campo(s) a preencher{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="13" class="mut">Nenhuma REIT cadastrada.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="mut">* Nota parcial: calculada só com os critérios que já têm dados.</p>
+</div>
+
+<div class="dica">Fluxo de uso: 1) clique em <b>Atualizar cotações</b> (dados automáticos via Yahoo Finance);
+2) abra cada REIT e preencha os campos manuais a partir do <i>Supplemental Package</i> trimestral (site de RI) e do rating S&amp;P/Moody's;
+3) o ranking aplica os filtros eliminatórios e a matriz ponderada.</div>
+{% endblock %}

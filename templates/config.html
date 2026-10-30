@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Metodologia{% endblock %}
+{% block conteudo %}
+<form method="post">
+<div class="card">
+  <h1>Metodologia</h1>
+  <div class="grid">
+    <div><label>Retenção nos EUA sobre dividendos (%)</label><input name="retencao_eua" value="{{ cfg.retencao_eua }}"></div>
+    <div><label>Treasury 10 anos (% a.a.) — atualizado com as cotações</label><input name="treasury_10a" value="{{ cfg.treasury_10a }}"></div>
+    <div><label>Nota mínima para "Candidata"</label><input name="nota_compra" value="{{ cfg.nota_compra }}"></div>
+    <div><label>Nota mínima para "Observação"</label><input name="nota_observacao" value="{{ cfg.nota_observacao }}"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Etapa 1 — Filtros eliminatórios</h2>
+  <div class="grid">
+    <div><label>Valor de mercado mínimo (US$ bi)</label><input name="min_market_cap_bi" value="{{ cfg.filtros.min_market_cap_bi }}"></div>
+    <div><label>Volume médio diário mínimo (US$ mi)</label><input name="min_vol_diario_mi" value="{{ cfg.filtros.min_vol_diario_mi }}"></div>
+    <div><label>Anos mínimos de listagem</label><input name="min_anos_listada" value="{{ cfg.filtros.min_anos_listada }}"></div>
+    <div><label>Anos mínimos sem corte de dividendo</label><input name="min_anos_sem_corte" value="{{ cfg.filtros.min_anos_sem_corte }}"></div>
+    <div><label>Payout AFFO máx. — mensais (%)</label><input name="max_payout_mensal" value="{{ cfg.filtros.max_payout_mensal }}"></div>
+    <div><label>Payout AFFO máx. — trimestrais (%)</label><input name="max_payout_trimestral" value="{{ cfg.filtros.max_payout_trimestral }}"></div>
+    <div><label>Dív. líq./EBITDA máx. (x)</label><input name="max_div_ebitda" value="{{ cfg.filtros.max_div_ebitda }}"></div>
+    <div><label>Maior inquilino máx. (% receita)</label><input name="max_inquilino_pct" value="{{ cfg.filtros.max_inquilino_pct }}"></div>
+    <div><label>Anos mín. de AFFO/ação crescente (de 5)</label><input name="min_affo_anos_crescimento" value="{{ cfg.filtros.min_affo_anos_crescimento }}"></div>
+    <div><label><input type="checkbox" name="exigir_grau_investimento" style="width:auto" {{ 'checked' if cfg.filtros.exigir_grau_investimento }}> Exigir grau de investimento (BBB- ou melhor)</label></div>
+  </div>
+  <h2 style="margin-top:14px">Setores excluídos</h2>
+  <div class="grid">{% for s in setores %}
+    <label style="color:var(--txt);font-size:13px"><input type="checkbox" name="setores_excluidos" value="{{ s }}" style="width:auto" {{ 'checked' if s in cfg.filtros.setores_excluidos }}> {{ s }}</label>
+  {% endfor %}</div>
+</div>
+
+<div class="card">
+  <h2>Etapa 2 — Matriz ponderada (pesos devem somar 100)</h2>
+  <table>
+    <tr><th>Critério</th><th>Peso (%)</th><th>Valor p/ nota 0</th><th>Valor p/ nota 10</th></tr>
+    {% set mapa = {'yield':'spread_yield','cagr':'cagr','payout':'payout','alavancagem':'alavancagem','valuation':'valuation'} %}
+    {% for k, peso in cfg.pesos.items() %}
+    <tr><td>{{ nomes_criterios[k] }}</td><td><input name="peso_{{ k }}" value="{{ peso }}"></td>
+      {% if k in mapa %}
+        <td><input name="faixa_{{ mapa[k] }}_0" value="{{ cfg.faixas[mapa[k]][0] }}"></td>
+        <td><input name="faixa_{{ mapa[k] }}_10" value="{{ cfg.faixas[mapa[k]][1] }}"></td>
+      {% elif k == 'frequencia' %}
+        <td colspan="2" class="linha">{% for f, v in cfg.notas_frequencia.items() %}<div style="width:110px"><label>{{ f }}</label><input name="freq_{{ f }}" value="{{ v }}"></div>{% endfor %}</td>
+      {% else %}<td colspan="2" class="mut">A- ou melhor = 10 · BBB+ = 8 · BBB = 6 · BBB- = 4 · abaixo = 0</td>{% endif %}
+    </tr>{% endfor %}
+  </table>
+  <p class="mut">Yield: spread = yield líquido − Treasury (p.p.). Valuation: P/AFFO atual ÷ P/AFFO médio de 5 anos.
+    Notas entre os limites são interpoladas linearmente.</p>
+</div>
+<button>Salvar metodologia</button>
+</form>
+<form method="post" action="{{ url_for('config_padrao') }}" style="margin-top:10px" onsubmit="return confirm('Restaurar os valores padrão?')">
+  <button class="sec">Restaurar padrão</button></form>
+{% endblock %}

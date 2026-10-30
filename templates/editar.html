@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block titulo %}{{ r.ticker }}{% endblock %}
+{% block conteudo %}
+<div class="card">
+  <div class="linha" style="justify-content:space-between">
+    <div>
+      <h1>{{ r.ticker }} <span class="mut">{{ r.nome or '' }}</span></h1>
+      <span class="tag s-{{ av.status.replace(' ', '-') }}">{{ av.status }}</span>
+      {% if av.nota is not none %}<span class="nota" style="margin-left:8px">Nota {{ av.nota|n(1) }}</span>{% if not av.nota_completa %} <span class="mut">(parcial)</span>{% endif %}{% endif %}
+    </div>
+    <div class="linha">
+      <form method="post" action="{{ url_for('atualizar_um', ticker=r.ticker) }}"><button class="sec">Atualizar cotação</button></form>
+      <form method="post" action="{{ url_for('excluir', ticker=r.ticker) }}" onsubmit="return confirm('Excluir {{ r.ticker }}?')"><button class="perigo">Excluir</button></form>
+    </div>
+  </div>
+  {% if r.erro_coleta %}<p class="falha">Última coleta falhou: {{ r.erro_coleta }}</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Dados automáticos <span class="mut">(Yahoo Finance · {{ r.atualizado_em or 'nunca atualizado' }})</span></h2>
+  <div class="grid">
+    <div><label>Preço</label>US$ {{ r.preco|n }}</div>
+    <div><label>Valor de mercado</label>US$ {{ (r.market_cap/1e9 if r.market_cap else none)|n(1) }} bi</div>
+    <div><label>Volume médio diário</label>US$ {{ (r.vol_medio_usd/1e6 if r.vol_medio_usd else none)|n(1) }} mi</div>
+    <div><label>DY bruto (12m) / líquido</label>{{ r.dy_bruto|n(2,'%') }} / {{ av.yield_liquido|n(2,'%') }}</div>
+    <div><label>Frequência detectada</label>{{ r.frequencia or '—' }} ({{ r.pagamentos_12m or 0 }} pagamentos/12m)</div>
+    <div><label>Meses com data-ex</label>{{ r.meses_pagamento or '—' }}</div>
+    <div><label>CAGR do dividendo 5a</label>{{ r.cagr_div_5a|n(1,'%') }}</div>
+    <div><label>Anos sem corte (detectado)</label>{{ r.anos_sem_corte if r.anos_sem_corte is not none else '—' }}</div>
+    <div><label>Anos listada</label>{{ r.anos_listada|n(0) }}</div>
+  </div>
+</div>
+
+<form method="post" class="card">
+  <h2>Dados manuais <span class="mut">(Supplemental Package · rating)</span></h2>
+  <div class="grid">
+    <div><label>Setor</label><select name="setor"><option value="">—</option>
+      {% for s in setores %}<option {{ 'selected' if r.setor==s }}>{{ s }}</option>{% endfor %}</select></div>
+    <div><label>AFFO positivo nos últimos 5 anos?</label><select name="affo_positivo_5a">
+      <option value="" {{ 'selected' if r.affo_positivo_5a is none }}>—</option>
+      <option value="1" {{ 'selected' if r.affo_positivo_5a==1 }}>Sim</option>
+      <option value="0" {{ 'selected' if r.affo_positivo_5a==0 }}>Não</option></select></div>
+    <div><label>Anos com AFFO/ação crescente (0–5)</label><input name="affo_anos_crescimento" value="{{ r.affo_anos_crescimento if r.affo_anos_crescimento is not none else '' }}"></div>
+    <div><label>Payout do AFFO (%)</label><input name="payout_affo" value="{{ r.payout_affo if r.payout_affo is not none else '' }}"></div>
+    <div><label>Dív. líquida / EBITDA (x)</label><input name="div_liq_ebitda" value="{{ r.div_liq_ebitda if r.div_liq_ebitda is not none else '' }}"></div>
+    <div><label>Rating (S&amp;P/Moody's equivalente)</label><select name="rating"><option value="">—</option>
+      {% for x in ratings %}<option {{ 'selected' if r.rating==x }}>{{ x }}</option>{% endfor %}</select></div>
+    <div><label>Maior inquilino (% da receita)</label><input name="maior_inquilino_pct" value="{{ r.maior_inquilino_pct if r.maior_inquilino_pct is not none else '' }}"></div>
+    <div><label>P/AFFO atual</label><input name="p_affo_atual" value="{{ r.p_affo_atual if r.p_affo_atual is not none else '' }}"></div>
+    <div><label>P/AFFO médio 5 anos</label><input name="p_affo_media5a" value="{{ r.p_affo_media5a if r.p_affo_media5a is not none else '' }}"></div>
+    <div><label>Corrigir frequência (opcional)</label><select name="frequencia_manual"><option value="">Automática</option>
+      {% for x in ['Mensal','Trimestral','Semestral','Anual'] %}<option {{ 'selected' if r.frequencia_manual==x }}>{{ x }}</option>{% endfor %}</select></div>
+    <div><label>Corrigir anos sem corte (opcional)</label><input name="anos_sem_corte_manual" value="{{ r.anos_sem_corte_manual if r.anos_sem_corte_manual is not none else '' }}" title="Use quando dividendos extraordinários gerarem falso corte"></div>
+  </div>
+  <div style="margin-top:12px"><label>Notas</label><textarea name="notas" rows="2">{{ r.notas or '' }}</textarea></div>
+  <div style="margin-top:12px"><button>Salvar</button> <a class="btn sec" href="{{ url_for('index') }}">Voltar ao ranking</a></div>
+</form>
+
+<div class="grid" style="grid-template-columns:1fr 1fr">
+<div class="card">
+  <h2>Etapa 1 — Filtros eliminatórios</h2>
+  <table>{% for nome, res, det in av.filtros %}
+    <tr><td>{% if res is true %}<span class="ok">✔</span>{% elif res is false %}<span class="falha">✗</span>{% else %}<span class="pend">?</span>{% endif %}</td>
+      <td>{{ nome }}</td><td class="mut num">{{ det }}</td></tr>{% endfor %}</table>
+</div>
+<div class="card">
+  <h2>Etapa 2 — Matriz ponderada</h2>
+  <table><tr><th>Critério</th><th class="num">Peso</th><th class="num">Nota</th></tr>
+  {% for k, v in av.notas.items() %}
+    <tr><td>{{ nomes_criterios[k] }}</td><td class="num">{{ cfg.pesos[k]|n(0,'%') }}</td>
+      <td class="num">{% if v is not none %}{{ v|n(1) }}<span class="barra"><i style="width:{{ (v*10)|round }}%"></i></span>{% else %}<span class="pend">sem dado</span>{% endif %}</td></tr>
+  {% endfor %}
+  <tr><td><b>Nota final</b></td><td></td><td class="num"><b>{{ av.nota|n(2) }}</b></td></tr></table>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block titulo %}Calendário{% endblock %}
+{% block conteudo %}
+<div class="card">
+  <h1>Calendário de proventos</h1>
+  <p class="mut">Meses com data-ex nos últimos 12 meses (REITs não reprovadas). Use para montar a "escada":
+    combinar trimestrais de ciclos diferentes para receber todos os meses.</p>
+  <div style="overflow-x:auto"><table class="cal">
+    <tr><th style="text-align:left">REIT</th><th>Status</th>
+      {% for m in ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'] %}<th>{{ m }}</th>{% endfor %}</tr>
+    {% for r, a, meses in linhas %}
+    <tr><td style="text-align:left"><a href="{{ url_for('editar', ticker=r.ticker) }}"><b>{{ r.ticker }}</b></a></td>
+      <td><span class="tag s-{{ a.status.replace(' ', '-') }}">{{ a.status }}</span></td>
+      {% for m in range(1, 13) %}<td class="{{ 'p' if m in meses }}">{{ '●' if m in meses else '' }}</td>{% endfor %}</tr>
+    {% else %}<tr><td colspan="14" class="mut">Sem dados — atualize as cotações primeiro.</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endblock %}

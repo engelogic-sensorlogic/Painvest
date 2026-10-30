@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Painvest{% endblock %} — Painvest</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <div class="logo">Pain<span>vest</span></div>
+  <nav>
+    <a href="{{ url_for('index') }}">Ranking</a>
+    <a href="{{ url_for('calendario') }}">Calendário de proventos</a>
+    <a href="{{ url_for('config') }}">Metodologia</a>
+    <a href="{{ url_for('backup') }}">Backup</a>
+  </nav>
+  <form method="post" action="{{ url_for('encerrar') }}" onsubmit="return confirm('Encerrar o Painvest?')">
+    <button class="sec" style="background:transparent;color:#cfdbef;border-color:#cfdbef">Encerrar</button>
+  </form>
+</header>
+<main>
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% block conteudo %}{% endblock %}
+</main>
+<footer>Painvest v{{ versao }} · Ferramenta de triagem — não é recomendação de investimento.</footer>
+</body>
+</html>
