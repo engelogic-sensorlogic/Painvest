@@ -18,7 +18,7 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, sen
 import db
 import scoring
 
-VERSAO = "1.1.0"
+VERSAO = "1.1.1"
 PORTA = 5077
 
 app = Flask(__name__, template_folder=db.resource_path("templates"),
@@ -130,11 +130,11 @@ def _coletar(ticker):
     """Cotações e dividendos (Yahoo Finance)."""
     import market
     try:
-        db.salvar(ticker, market.coletar(ticker))
-        return True
-    except Exception as e:  # sem internet, ticker inválido etc.
+        db.salvar(ticker, market.coletar(ticker, db.obter(ticker)))
+        return True, None
+    except Exception as e:  # sem internet, ticker inválido, limite do Yahoo etc.
         db.salvar(ticker, {"erro_coleta": _erro(e)})
-        return False
+        return False, _erro(e)
 
 
 def _coletar_sec(ticker, c):
@@ -142,14 +142,15 @@ def _coletar_sec(ticker, c):
     import sec
     try:
         db.salvar(ticker, sec.coletar(ticker, c["contato_sec"], db.DATA_DIR, c["ajuste_payout_ffo"]))
-        return True
+        return True, None
     except Exception as e:
         db.salvar(ticker, {"sec_erro": _erro(e)})
-        return False
+        return False, _erro(e)
 
 
 # ---------- Atualização em segundo plano com progresso ----------
 PROGRESSO = {"rodando": False}
+PAUSA_YAHOO = 0.8  # segundos entre tickers
 _trava = threading.Lock()
 
 
@@ -165,8 +166,8 @@ def _tarefa_atualizacao(tickers):
     usar_sec = bool((c.get("contato_sec") or "").strip())
     total = 1 + len(tickers) + ((1 + len(tickers)) if usar_sec else 0)
     _set(rodando=True, total=total, feito=0, ok=0, falhas=0, sec_ok=0, sec_falhas=0,
-         etapa="Treasury 10 anos", ticker="", avisos=[], usar_sec=usar_sec, concluido=False)
-    avisos = []
+         etapa="Treasury 10 anos", ticker="", avisos=[], erros=[], usar_sec=usar_sec, concluido=False)
+    avisos, erros = [], []
     try:
         try:
             c["treasury_10a"] = market.treasury_10a()
@@ -177,10 +178,14 @@ def _tarefa_atualizacao(tickers):
 
         for t in tickers:
             _set(etapa="Cotações e dividendos (Yahoo Finance)", ticker=t)
-            ok = _coletar(t)
+            ok, msg = _coletar(t)
+            if not ok:
+                erros.append({"ticker": t, "fonte": "Yahoo", "msg": msg})
             with _trava:
                 PROGRESSO["ok" if ok else "falhas"] += 1
                 PROGRESSO["feito"] += 1
+                PROGRESSO["erros"] = list(erros)
+            time.sleep(PAUSA_YAHOO)  # evita limitação de requisições do Yahoo
 
         if usar_sec:
             _set(etapa="Base de empresas da SEC", ticker="")
@@ -193,17 +198,20 @@ def _tarefa_atualizacao(tickers):
             for t in tickers:
                 _set(etapa="Fundamentos — FFO, payout, dívida (SEC)", ticker=t)
                 if usar_sec:
-                    ok = _coletar_sec(t, c)
+                    ok, msg = _coletar_sec(t, c)
+                    if not ok:
+                        erros.append({"ticker": t, "fonte": "SEC", "msg": msg})
                     time.sleep(0.15)  # limite de requisições da SEC
                 else:
                     ok = False
                 with _trava:
                     PROGRESSO["sec_ok" if ok else "sec_falhas"] += 1
                     PROGRESSO["feito"] += 1
+                    PROGRESSO["erros"] = list(erros)
         else:
             avisos.append("Coleta SEC desativada: informe seu e-mail de contato em Metodologia.")
     finally:
-        _set(rodando=False, concluido=True, etapa="Concluído", ticker="", avisos=avisos)
+        _set(rodando=False, concluido=True, etapa="Concluído", ticker="", avisos=avisos, erros=erros)
 
 
 @app.post("/atualizar")
@@ -226,11 +234,11 @@ def atualizar_status():
 @app.post("/atualizar/<ticker>")
 def atualizar_um(ticker):
     ticker = ticker.upper()
-    ok = _coletar(ticker)
+    ok, _ = _coletar(ticker)
     c = cfg()
     msg = f"{ticker}: cotações {'ok' if ok else 'com falha'}"
     if (c.get("contato_sec") or "").strip():
-        ok_sec = _coletar_sec(ticker, c)
+        ok_sec, _ = _coletar_sec(ticker, c)
         msg += f" · SEC {'ok' if ok_sec else 'com falha'}"
         ok = ok and ok_sec
     flash(msg + ".", "ok" if ok else "erro")

@@ -4,6 +4,7 @@ Coleta: nome, preço, valor de mercado, volume médio em US$, dividend yield (12
 frequência, meses de pagamento, CAGR do dividendo (5a), anos sem corte e anos de listagem.
 AFFO, payout, dívida/EBITDA e rating NÃO têm fonte gratuita confiável -> entrada manual.
 """
+import time
 from datetime import datetime, timedelta
 from statistics import median
 
@@ -79,34 +80,59 @@ def analisar_dividendos(divs, hoje=None):
     return res
 
 
-def coletar(ticker):
-    """Coleta dados de um ticker. Retorna dict com os campos automáticos."""
+def _limitado(e):
+    """True se o erro indica limitação de requisições do Yahoo."""
+    txt = f"{type(e).__name__} {e}".lower()
+    return "ratelimit" in txt or "too many requests" in txt or "429" in txt
+
+
+def com_retentativa(func, tentativas=3, espera=6.0, dormir=None):
+    """Executa func(); se o Yahoo limitar, espera (6s, 12s...) e tenta de novo."""
+    for i in range(tentativas):
+        try:
+            return func()
+        except Exception as e:
+            if not _limitado(e) or i + 1 == tentativas:
+                raise
+            (dormir or time.sleep)(espera * (i + 1))
+
+
+def coletar(ticker, existente=None):
+    """Coleta dados de um ticker com o mínimo de requisições ao Yahoo.
+
+    1 requisição: histórico completo (preço, volume, dividendos, início da negociação).
+    + valor de mercado (fast_info) e, só na primeira vez, o nome da empresa.
+    """
     import yfinance as yf  # import tardio: o app abre mesmo sem internet
 
+    existente = existente or {}
     t = yf.Ticker(ticker)
+    hist = com_retentativa(lambda: t.history(period="max", auto_adjust=False, actions=True))
+    if hist is None or hist.empty:
+        raise ValueError(f"Yahoo não retornou histórico para {ticker}.")
+
     dados = {}
-    fi = t.fast_info
-    preco = float(fi["last_price"])
+    preco = float(hist["Close"].iloc[-1])
     dados["preco"] = round(preco, 2)
-    try:
-        dados["market_cap"] = float(fi["market_cap"])
-    except Exception:
-        dados["market_cap"] = None
-
-    hist = t.history(period="3mo")
-    if not hist.empty:
-        dados["vol_medio_usd"] = float((hist["Volume"] * hist["Close"]).mean())
+    rec = hist.tail(63)  # ~3 meses de pregões
+    dados["vol_medio_usd"] = float((rec["Volume"] * rec["Close"]).mean())
+    inicio = hist.index[0].to_pydatetime().replace(tzinfo=None)
+    dados["anos_listada"] = round((datetime.now() - inicio).days / 365.25, 1)
 
     try:
-        info = t.info
-        dados["nome"] = info.get("longName") or info.get("shortName")
-        primeira = info.get("firstTradeDateEpochUtc")
-        if primeira:
-            dados["anos_listada"] = round((datetime.now() - datetime.fromtimestamp(primeira)).days / 365.25, 1)
+        dados["market_cap"] = float(com_retentativa(lambda: t.fast_info["market_cap"]))
     except Exception:
-        pass
+        pass  # mantém o valor anterior gravado no banco
 
-    divs = [(d.to_pydatetime().replace(tzinfo=None), float(v)) for d, v in t.dividends.items()]
+    if not existente.get("nome"):
+        try:
+            info = com_retentativa(lambda: t.info)
+            dados["nome"] = info.get("longName") or info.get("shortName")
+        except Exception:
+            pass
+
+    serie = hist["Dividends"] if "Dividends" in hist else []
+    divs = [(d.to_pydatetime().replace(tzinfo=None), float(v)) for d, v in serie.items() if v]
     m = analisar_dividendos(divs)
     dados["dy_bruto"] = round(m.pop("div_12m") / preco * 100, 2) if preco else None
     dados.update(m)
@@ -118,4 +144,5 @@ def coletar(ticker):
 def treasury_10a():
     """Rendimento do Treasury de 10 anos (% a.a.) via ^TNX."""
     import yfinance as yf
-    return round(float(yf.Ticker("^TNX").fast_info["last_price"]), 2)
+    hist = com_retentativa(lambda: yf.Ticker("^TNX").history(period="5d"))
+    return round(float(hist["Close"].iloc[-1]), 2)

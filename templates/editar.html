@@ -72,7 +72,7 @@
       <td class="num">{{ (d.dividendos/1e6 if d.dividendos is not none else none)|n(0) }}</td></tr>
     {% endfor %}
   </table>
-  <p class="mut">Último ano: EBITDAre US$ {{ (sec.ultimo.ebitda/1e6)|n(0) }} mi · Dívida US$ {{ (sec.ultimo.divida/1e6 if sec.ultimo.divida else none)|n(0) }} mi ·
+  <p class="mut">EBITDAre ({{ sec.ultimo.base_ebitda or 'ano fiscal' }}): US$ {{ (sec.ultimo.ebitda/1e6)|n(0) }} mi · Dívida US$ {{ (sec.ultimo.divida/1e6 if sec.ultimo.divida else none)|n(0) }} mi ·
     Caixa US$ {{ (sec.ultimo.caixa/1e6 if sec.ultimo.caixa else none)|n(0) }} mi. Payout inclui ajuste de +{{ cfg.ajuste_payout_ffo|n(1) }} p.p. (FFO → AFFO).<br>
     Tags XBRL usadas: {% for k, t in sec.tags.items() if t %}{{ k }}={{ t }}{{ ', ' if not loop.last }}{% endfor %}</p>
   <p class="mut">Aproximação padronizada (definição Nareit). Se divergir do <i>Supplemental Package</i>, digite o valor da empresa no campo manual — ele prevalece.</p>

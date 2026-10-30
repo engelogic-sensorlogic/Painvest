@@ -248,11 +248,12 @@ def test_atualizacao_com_progresso(cliente, monkeypatch):
     db.salvar("AAA", {"setor": "Self-storage"})
     db.salvar("BBB", {"setor": "Self-storage"})
     monkeypatch.setattr(market, "treasury_10a", lambda: 4.5)
-    monkeypatch.setattr(market, "coletar", lambda t: (_ for _ in ()).throw(RuntimeError("offline")) if t == "BBB"
+    monkeypatch.setattr(market, "coletar", lambda t, e=None: (_ for _ in ()).throw(RuntimeError("offline")) if t == "BBB"
                         else {"preco": 10.0, "dy_bruto": 5.0})
     monkeypatch.setattr(sec, "mapa_tickers", lambda *a, **k: {})
     monkeypatch.setattr(sec, "coletar", lambda t, *a, **k: {"payout_calc": 70.0, "sec_erro": None})
     monkeypatch.setattr(appmod.time, "sleep", lambda s: None)
+    monkeypatch.setattr(appmod, "PAUSA_YAHOO", 0)
     c = cfg()
     c["contato_sec"] = "teste@exemplo.com"
     db.gravar_config(c)
@@ -265,3 +266,72 @@ def test_atualizacao_com_progresso(cliente, monkeypatch):
     assert db.obter("AAA")["payout_calc"] == 70.0
     assert "offline" in db.obter("BBB")["erro_coleta"]
     assert db.ler_config(scoring.CONFIG_PADRAO)["treasury_10a"] == 4.5
+
+
+# ---------------- v1.1.1: EBITDA trimestral anualizado e Yahoo ----------------
+def test_sec_ebitda_trimestral_anualizado_e_q4_derivado():
+    fatos = _fatos_sec()
+    g = fatos["facts"]["us-gaap"]
+
+    def tri(tag, ini, fim, val, form="10-Q"):
+        g[tag]["units"]["USD"].append({"start": ini, "end": fim, "val": val, "form": form, "filed": fim[:8] + "28"})
+
+    # 2026: Q1 e Q2 informados em 10-Q
+    for ini, fim, mult in (("2026-01-01", "2026-03-31", 1.0), ("2026-04-01", "2026-06-30", 1.2)):
+        tri("NetIncomeLoss", ini, fim, 300e6 * mult)
+        tri("DepreciationAndAmortization", ini, fim, 270e6 * mult)
+        tri("InterestExpense", ini, fim, 130e6 * mult)
+        tri("GainsLossesOnSalesOfInvestmentRealEstate", ini, fim, 0.0)
+    g["LongTermDebt"]["units"]["USD"].append({"end": "2026-06-30", "val": 15_000e6, "form": "10-Q", "filed": "2026-08-05"})
+    r = sec.calcular(fatos)
+    # EBITDA Q2 = 1,2 x (300+270+130) = 840 mi -> anualizado 3.360 ; 15.000 / 3.360 = 4,46x
+    assert r["div_ebitda_calc"] == pytest.approx(15_000 / 3_360, abs=0.01)
+    assert "2026-06-30" in r["detalhe"]["ultimo"]["base_ebitda"]
+
+    # Q4 derivado = ano fiscal − 9 meses acumulados
+    serie, _ = sec.serie_trimestral({"facts": {"us-gaap": {"NetIncomeLoss": {"units": {"USD": [
+        {"start": "2025-01-01", "end": "2025-12-31", "val": 1000.0, "form": "10-K", "filed": "2026-02-20"},
+        {"start": "2025-01-01", "end": "2025-09-30", "val": 700.0, "form": "10-Q", "filed": "2025-11-01"},
+    ]}}}}}, ["NetIncomeLoss"])
+    assert serie["2025-12-31"] == pytest.approx(300.0)
+
+
+class _YahooFalso:
+    """Simula yfinance.Ticker com 1 limitação de requisições antes de responder."""
+    chamadas = 0
+
+    def __init__(self, ticker):
+        import pandas as pd
+        idx = pd.date_range("2010-01-29", "2026-10-29", freq="ME")
+        self._hist = pd.DataFrame({"Close": 50.0, "Volume": 1_000_000.0, "Dividends": 0.25}, index=idx)
+        self.fast_info = {"market_cap": 40e9}
+        self.info = {"longName": "Empresa Teste"}
+
+    def history(self, **kw):
+        _YahooFalso.chamadas += 1
+        if _YahooFalso.chamadas == 1:
+            raise RuntimeError("Too Many Requests. Rate limited. Try after a while.")
+        return self._hist
+
+
+def test_yahoo_coleta_com_retentativa(monkeypatch):
+    import yfinance
+    monkeypatch.setattr(yfinance, "Ticker", _YahooFalso)
+    monkeypatch.setattr(market.time, "sleep", lambda s: None)
+    _YahooFalso.chamadas = 0
+    d = market.coletar("TST")
+    assert _YahooFalso.chamadas == 2          # 1 limitação + 1 sucesso
+    assert d["preco"] == 50.0 and d["market_cap"] == 40e9 and d["nome"] == "Empresa Teste"
+    assert d["frequencia"] == "Mensal" and d["dy_bruto"] == pytest.approx(6.0)
+    assert d["anos_listada"] > 16
+
+
+def test_erro_que_nao_e_limitacao_nao_repete():
+    chamadas = []
+
+    def falha():
+        chamadas.append(1)
+        raise ValueError("ticker inválido")
+    with pytest.raises(ValueError):
+        market.com_retentativa(falha, dormir=lambda s: None)
+    assert len(chamadas) == 1

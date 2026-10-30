@@ -35,6 +35,14 @@
     <div id="pSecBox"><label>Fundamentos (SEC)</label><span class="ok" id="pSecOk">0 ok</span> · <span class="falha" id="pSecFalhas">0 falhas</span></div>
   </div>
   <div id="pAvisos" class="mut"></div>
+  <div id="pErros" hidden>
+    <h2 style="margin-top:12px">Erros desta atualização</h2>
+    <table><thead><tr><th>Ticker</th><th>Fonte</th><th>Mensagem</th></tr></thead><tbody id="pErrosLinhas"></tbody></table>
+  </div>
+  <div id="pAcoes" class="linha" style="margin-top:12px" hidden>
+    <button type="button" onclick="location.reload()">Recarregar ranking</button>
+    <button type="button" class="sec" onclick="$('progresso').hidden = true">Fechar</button>
+  </div>
 </div>
 
 <div class="card" style="overflow-x:auto">
@@ -99,8 +107,15 @@ function mostrar(p) {
   $('pSecOk').textContent = (p.sec_ok || 0) + ' ok';
   $('pSecFalhas').textContent = (p.sec_falhas || 0) + ' falhas';
   $('pSecBox').style.opacity = p.usar_sec === false ? .4 : 1;
-  $('pAvisos').innerHTML = (p.avisos || []).map(a => '<div>⚠ ' + a + '</div>').join('');
+  $('pAvisos').innerHTML = (p.avisos || []).map(a => '<div>⚠ ' + esc(a) + '</div>').join('');
+  const erros = p.erros || [];
+  $('pErros').hidden = !erros.length;
+  $('pErrosLinhas').innerHTML = erros.map(e =>
+    '<tr><td><b>' + esc(e.ticker) + '</b></td><td>' + esc(e.fonte) + '</td><td class="mut">' + esc(e.msg) + '</td></tr>').join('');
+  $('pAcoes').hidden = !p.concluido;
 }
+
+function esc(t) { const d = document.createElement('div'); d.textContent = t == null ? '' : t; return d.innerHTML; }
 
 async function consultar() {
   try {
@@ -110,8 +125,9 @@ async function consultar() {
     $('btnAtualizar').disabled = false;
     $('btnAtualizar').textContent = 'Atualizar cotações';
     if (p.concluido && timer !== null) {
-      $('pEtapa').textContent = 'Concluído — recarregando o ranking...';
-      setTimeout(() => location.reload(), 1500);
+      const nErros = (p.falhas || 0) + (p.sec_falhas || 0);
+      $('pEtapa').textContent = nErros ? 'Concluído com ' + nErros + ' erro(s) — veja a lista abaixo'
+                                       : 'Concluído sem erros — clique em Recarregar ranking';
     }
     timer = null;
   } catch (e) { timer = setTimeout(consultar, 1000); }

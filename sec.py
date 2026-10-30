@@ -5,7 +5,8 @@ Calcula aproximações padronizadas (definição Nareit) a partir dos balanços 
              + Impairments − Dividendos preferenciais
   EBITDAre = Lucro líquido + Juros + Impostos + D&A − Ganhos + Impairments
   Payout   = Dividendos pagos aos ordinaristas ÷ FFO
-  Dívida líquida / EBITDAre (balanço do fim do último ano fiscal)
+  Dívida líquida / EBITDAre anualizado (último trimestre x 4, como as REITs divulgam;
+  na falta de dados trimestrais, usa o último ano fiscal)
 
 A SEC exige um User-Agent com e-mail de contato (configurado na tela Metodologia).
 """
@@ -117,26 +118,73 @@ def serie_anual(fatos, tags, unidade="USD"):
     return melhor, tag_melhor
 
 
-def valor_instante(fatos, tags, ano, unidade="USD"):
-    """Valor de balanço no fim do ano fiscal `ano` (10-K). Retorna (valor, tag)."""
+def serie_trimestral(fatos, tags, unidade="USD"):
+    """{data_fim: valor} de trimestres (~3 meses), de 10-Q e 10-K.
+
+    O 4º trimestre raramente é informado isolado: é derivado como ano fiscal − 9 meses acumulados.
+    Retorna (serie, tag_usada) da tag com o trimestre mais recente.
+    """
     gaap = fatos.get("facts", {}).get("us-gaap", {})
+    melhor, tag_melhor = {}, None
     for tag in tags:
-        itens = [it for it in gaap.get(tag, {}).get("units", {}).get(unidade, [])
-                 if "start" not in it and it.get("end", "")[:4] == str(ano)
-                 and str(it.get("form", "")).startswith("10-K")]
+        itens = gaap.get(tag, {}).get("units", {}).get(unidade, [])
+        serie, anual, nove = {}, {}, {}
+        for it in itens:
+            dur = _duracao_dias(it)
+            if dur is None:
+                continue
+            chave_ord = it.get("filed", "")
+            if 80 <= dur <= 100:
+                alvo = serie
+            elif 340 <= dur <= 380:
+                alvo = anual
+            elif 260 <= dur <= 285:
+                alvo = nove
+            else:
+                continue
+            k = (it["start"], it["end"]) if alvo is not serie else it["end"]
+            if k not in alvo or chave_ord >= alvo[k][1]:
+                alvo[k] = (float(it["val"]), chave_ord)
+        serie = {k: v for k, (v, _) in serie.items()}
+        for (ini, fim), (v_ano, _) in anual.items():
+            if fim in serie:
+                continue
+            noves = [v for (i9, _f), (v, _) in nove.items() if i9 == ini]
+            if noves:
+                serie[fim] = v_ano - noves[0]
+        if serie and (not melhor or max(serie) > max(melhor)):
+            melhor, tag_melhor = serie, tag
+    return melhor, tag_melhor
+
+
+def valor_instante(fatos, tags, quando, unidade="USD"):
+    """Valor de balanço. `quando`: ano fiscal (int, 10-K) ou data exata 'AAAA-MM-DD'.
+
+    Retorna (valor, tag)."""
+    gaap = fatos.get("facts", {}).get("us-gaap", {})
+
+    def casa(it):
+        if "start" in it:
+            return False
+        if isinstance(quando, int):
+            return it.get("end", "")[:4] == str(quando) and str(it.get("form", "")).startswith("10-K")
+        return it.get("end") == quando
+
+    for tag in tags:
+        itens = [it for it in gaap.get(tag, {}).get("units", {}).get(unidade, []) if casa(it)]
         if itens:
             it = max(itens, key=lambda x: (x["end"], x.get("filed", "")))
             return float(it["val"]), tag
     return None, None
 
 
-def divida_total(fatos, ano):
-    totais = [(v, t) for v, t in (valor_instante(fatos, [t], ano) for t in TAGS_DIVIDA_TOTAL) if v]
+def divida_total(fatos, quando):
+    totais = [(v, t) for v, t in (valor_instante(fatos, [t], quando) for t in TAGS_DIVIDA_TOTAL) if v]
     if totais:
         return max(totais)
     soma, usadas = 0.0, []
     for t in TAGS_DIVIDA_COMPONENTES:
-        v, _ = valor_instante(fatos, [t], ano)
+        v, _ = valor_instante(fatos, [t], quando)
         if v:
             soma += v
             usadas.append(t)
@@ -178,11 +226,25 @@ def calcular(fatos, ajuste_payout=0.0):
             payout = None
     res["payout_calc"] = round(payout, 1) if payout is not None else None
 
-    # Dívida líquida / EBITDAre
-    ebitda = (s["lucro"][ult] + s["juros"].get(ult, 0.0) + s["impostos"].get(ult, 0.0)
-              + s["da"][ult] - s["ganhos"].get(ult, 0.0) + s["impairment"].get(ult, 0.0))
-    dvd, tag_dvd = divida_total(fatos, ult)
-    caixa, _ = valor_instante(fatos, TAGS["caixa"], ult)
+    # Dívida líquida / EBITDAre — preferência: último trimestre anualizado (padrão das REITs)
+    q = {}
+    for chave in ("lucro", "da", "juros", "impostos", "ganhos", "impairment"):
+        q[chave], _ = serie_trimestral(fatos, TAGS[chave])
+    fins = sorted(f for f in q["lucro"] if f in q["da"])
+    ebitda, base, quando = None, None, None
+    if fins:
+        f = fins[-1]
+        dvd_q, _ = divida_total(fatos, f)
+        if dvd_q and f[:4] >= str(ult):
+            ebitda = 4 * (q["lucro"][f] + q["juros"].get(f, 0.0) + q["impostos"].get(f, 0.0)
+                          + q["da"][f] - q["ganhos"].get(f, 0.0) + q["impairment"].get(f, 0.0))
+            base, quando = f"trimestre encerrado em {f} x 4", f
+    if ebitda is None or ebitda <= 0:
+        ebitda = (s["lucro"][ult] + s["juros"].get(ult, 0.0) + s["impostos"].get(ult, 0.0)
+                  + s["da"][ult] - s["ganhos"].get(ult, 0.0) + s["impairment"].get(ult, 0.0))
+        base, quando = f"ano fiscal {ult}", ult
+    dvd, tag_dvd = divida_total(fatos, quando)
+    caixa, _ = valor_instante(fatos, TAGS["caixa"], quando)
     alav = None
     if dvd and ebitda > 0:
         alav = (dvd - (caixa or 0.0)) / ebitda
@@ -197,7 +259,7 @@ def calcular(fatos, ajuste_payout=0.0):
             "impairment": s["impairment"].get(a), "ffo": ffo[a],
             "ffo_acao": ffo_ps.get(a), "dividendos": s["dividendos"].get(a),
         }
-    res["detalhe"]["ultimo"] = {"ebitda": ebitda, "divida": dvd, "caixa": caixa}
+    res["detalhe"]["ultimo"] = {"ebitda": ebitda, "divida": dvd, "caixa": caixa, "base_ebitda": base}
     return res
 
 
