@@ -4,6 +4,9 @@ Uso:  .venv\\Scripts\\python.exe diagnostico_yahoo.py O ADC PSA
 """
 import sys
 import time
+import warnings
+
+warnings.filterwarnings("ignore")
 
 import yfinance as yf
 

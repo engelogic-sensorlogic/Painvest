@@ -3,6 +3,7 @@
 Executa um servidor Flask local e abre o navegador.
 """
 import io
+import logging
 import json
 import os
 import socket
@@ -18,7 +19,7 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, sen
 import db
 import scoring
 
-VERSAO = "1.1.5"
+VERSAO = "1.1.6"
 PORTA = 5077
 
 app = Flask(__name__, template_folder=db.resource_path("templates"),
@@ -133,6 +134,7 @@ def _coletar(ticker):
         db.salvar(ticker, market.coletar(ticker, db.obter(ticker)))
         return True, None
     except Exception as e:  # sem internet, ticker inválido, limite do Yahoo etc.
+        logging.getLogger("painvest").warning("Yahoo %s: %s", ticker, _erro(e))
         db.salvar(ticker, {"erro_coleta": _erro(e)})
         return False, _erro(e)
 
@@ -144,6 +146,7 @@ def _coletar_sec(ticker, c):
         db.salvar(ticker, sec.coletar(ticker, c["contato_sec"], db.DATA_DIR))
         return True, None
     except Exception as e:
+        logging.getLogger("painvest").warning("SEC %s: %s", ticker, _erro(e))
         db.salvar(ticker, {"sec_erro": _erro(e)})
         return False, _erro(e)
 
@@ -351,13 +354,30 @@ def primeira_execucao():
             db.salvar(t, {"setor": setor})
 
 
+def configurar_log():
+    """Registra avisos e erros (inclusive os que o yfinance só loga) em data/painvest.log."""
+    import logging
+    import warnings
+    from logging.handlers import RotatingFileHandler
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings("ignore", message=".*inplace keyword.*")
+    os.makedirs(db.DATA_DIR, exist_ok=True)
+    h = RotatingFileHandler(os.path.join(db.DATA_DIR, "painvest.log"), maxBytes=1_000_000,
+                            backupCount=2, encoding="utf-8")
+    h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    raiz = logging.getLogger()
+    raiz.setLevel(logging.WARNING)
+    raiz.addHandler(h)
+
+
 def main():
     # Executável sem console (--noconsole): stdout/stderr são None
     if sys.stdout is None or sys.stderr is None:
         nulo = open(os.devnull, "w")
         sys.stdout = sys.stdout or nulo
         sys.stderr = sys.stderr or nulo
-    url =f"http://127.0.0.1:{PORTA}/"
+    configurar_log()
+    url = f"http://127.0.0.1:{PORTA}/"
     if porta_em_uso(PORTA):  # já aberto: só abre o navegador
         webbrowser.open(url)
         return
