@@ -13,12 +13,14 @@
       <form method="post" action="{{ url_for('excluir', ticker=r.ticker) }}" onsubmit="return confirm('Excluir {{ r.ticker }}?')"><button class="perigo">Excluir</button></form>
     </div>
   </div>
-  {% if r.erro_coleta %}<p class="falha">Última coleta Yahoo falhou: {{ r.erro_coleta }}</p>{% endif %}
-  {% if r.sec_erro %}<p class="falha">Última coleta SEC falhou: {{ r.sec_erro }}</p>{% endif %}
+  {% if r.erro_coleta %}<p class="falha">Última coleta Yahoo falhou: {{ r.erro_coleta }}
+    {% if r.atualizado_em %}<br><span class="obs">Exibindo dados DESATUALIZADOS de {{ r.atualizado_em }}.</span>{% endif %}</p>{% endif %}
+  {% if r.sec_erro %}<p class="falha">Última coleta SEC falhou: {{ r.sec_erro }}
+    {% if r.sec_atualizado_em %}<br><span class="obs">Valores calculados DESATUALIZADOS, de {{ r.sec_atualizado_em }}.</span>{% endif %}</p>{% endif %}
 </div>
 
 <div class="card">
-  <h2>Dados automáticos <span class="mut">(Yahoo Finance · {{ r.atualizado_em or 'nunca atualizado' }})</span></h2>
+  <h2>Dados automáticos <span class="mut">(Yahoo Finance · {{ r.atualizado_em or 'nunca atualizado' }})</span>{% if r.erro_coleta %} <span class="tag s-Observação">desatualizado</span>{% endif %}</h2>
   <div class="grid">
     <div><label>Preço</label>US$ {{ r.preco|n }}</div>
     <div><label>Valor de mercado</label>US$ {{ (r.market_cap/1e9 if r.market_cap else none)|n(1) }} bi</div>
@@ -59,7 +61,7 @@
 
 {% if sec %}
 <div class="card" style="overflow-x:auto">
-  <h2>Cálculo pela SEC <span class="mut">(10-K anuais · {{ r.sec_atualizado_em }} · valores em US$ milhões)</span></h2>
+  <h2>Cálculo pela SEC {% if r.sec_erro %}<span class="tag s-Observação">desatualizado</span>{% endif %} <span class="mut">(10-K anuais · {{ r.sec_atualizado_em }} · valores em US$ milhões)</span></h2>
   <table>
     <tr><th>Ano fiscal</th><th class="num">Lucro líquido</th><th class="num">+ D&amp;A</th><th class="num">− Ganhos venda</th>
       <th class="num">+ Impairment</th><th class="num">= FFO</th><th class="num">FFO/ação (US$)</th><th class="num">Dividendos pagos</th></tr>

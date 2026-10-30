@@ -18,7 +18,7 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, sen
 import db
 import scoring
 
-VERSAO = "1.1.2"
+VERSAO = "1.1.3"
 PORTA = 5077
 
 app = Flask(__name__, template_folder=db.resource_path("templates"),

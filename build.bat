@@ -2,13 +2,13 @@
 REM ===================================================================
 REM  Painvest - Build completo: ambiente, testes, executavel e instalador
 REM  Requisitos: Python 3.11+ no PATH e Inno Setup 7 instalado
-REM  Uso: build.bat [versao]     ex.: build.bat 1.1.2
+REM  Uso: build.bat [versao]     ex.: build.bat 1.1.3
 REM ===================================================================
 setlocal EnableExtensions
 cd /d "%~dp0"
 
 set "VERSAO=%~1"
-if "%VERSAO%"=="" set "VERSAO=1.1.2"
+if "%VERSAO%"=="" set "VERSAO=1.1.3"
 
 echo.
 echo [1/6] Ambiente virtual...

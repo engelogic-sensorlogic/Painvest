@@ -369,3 +369,24 @@ def test_calculado_fora_do_limite_vira_verificar():
     assert scoring.avaliar(r, c)["status"] == "Reprovada"
     # valor manual confirmado fora do limite reprova sempre
     assert scoring.avaliar(dict(COMPLETA, div_liq_ebitda=6.5), cfg())["status"] == "Reprovada"
+
+
+def test_historico_vazio_tenta_alternativas():
+    import pandas as pd
+    chamadas = []
+
+    class T:
+        def history(self, **kw):
+            chamadas.append(kw)
+            if len(chamadas) < 3:
+                return pd.DataFrame()           # Yahoo limitando: resposta vazia
+            return pd.DataFrame({"Close": [1.0]}, index=pd.to_datetime(["2026-10-29"]))
+    h = market.obter_historico(T(), "O", dormir=lambda s: None)
+    assert not h.empty and len(chamadas) == 3
+    assert chamadas[1].get("start") == "1970-01-01"
+
+    class Sempre:
+        def history(self, **kw):
+            return pd.DataFrame()
+    with pytest.raises(market.HistoricoVazio):
+        market.obter_historico(Sempre(), "O", dormir=lambda s: None)

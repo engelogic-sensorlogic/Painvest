@@ -71,8 +71,8 @@
       <td class="num">{{ a.efetivo.div_liq_ebitda|n(1, 'x') }}{% if 'div_liq_ebitda' in a.origem_calc %}<sup class="calc" title="Calculado via SEC">c</sup>{% endif %}</td>
       <td>{{ r.rating or '—' }}</td>
       <td class="mut">
-        {% if r.erro_coleta %}<div class="falha">Erro Yahoo</div>{% endif %}
-        {% if r.sec_erro %}<div class="falha" title="{{ r.sec_erro }}">Erro SEC</div>{% endif %}
+        {% if r.erro_coleta %}<div class="falha" title="{{ r.erro_coleta }}">Erro Yahoo — cotações de {{ r.atualizado_em or '—' }}</div>{% endif %}
+        {% if r.sec_erro %}<div class="falha" title="{{ r.sec_erro }}">Erro SEC — cálculo de {{ r.sec_atualizado_em or '—' }}</div>{% endif %}
         {% for f in a.reprovados[:2] %}{% if a.status == 'Verificar' %}<div class="obs">⚠ Conferir: {{ f[0] }} ({{ f[2] }})</div>{% else %}<div class="falha">✗ {{ f[0] }} ({{ f[2] }})</div>{% endif %}{% endfor %}
         {% if not a.reprovados and a.pendentes %}{{ a.pendentes|length }} campo(s) a preencher{% endif %}
       </td>

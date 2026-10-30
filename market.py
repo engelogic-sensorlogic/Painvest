@@ -97,6 +97,32 @@ def com_retentativa(func, tentativas=3, espera=6.0, dormir=None):
             (dormir or time.sleep)(espera * (i + 1))
 
 
+class HistoricoVazio(RuntimeError):
+    """O Yahoo às vezes responde vazio quando está limitando requisições."""
+
+
+def obter_historico(t, ticker, dormir=None, espera=4.0):
+    """Histórico diário com dividendos. Tenta períodos alternativos e espera entre tentativas,
+    pois resposta vazia costuma indicar limitação temporária do Yahoo."""
+    tentativas = [
+        dict(period="max"),
+        dict(start="1970-01-01"),
+        dict(period="10y"),
+    ]
+    ultimo_erro = None
+    for i, kw in enumerate(tentativas):
+        try:
+            hist = com_retentativa(lambda: t.history(auto_adjust=False, actions=True, **kw), dormir=dormir)
+            if hist is not None and not hist.empty:
+                return hist
+            ultimo_erro = HistoricoVazio(f"Yahoo retornou histórico vazio para {ticker} (provável limitação temporária).")
+        except Exception as e:
+            ultimo_erro = e
+        if i + 1 < len(tentativas):
+            (dormir or time.sleep)(espera * (i + 1))
+    raise ultimo_erro
+
+
 def coletar(ticker, existente=None):
     """Coleta dados de um ticker com o mínimo de requisições ao Yahoo.
 
@@ -107,9 +133,7 @@ def coletar(ticker, existente=None):
 
     existente = existente or {}
     t = yf.Ticker(ticker)
-    hist = com_retentativa(lambda: t.history(period="max", auto_adjust=False, actions=True))
-    if hist is None or hist.empty:
-        raise ValueError(f"Yahoo não retornou histórico para {ticker}.")
+    hist = obter_historico(t, ticker)
 
     dados = {}
     preco = float(hist["Close"].iloc[-1])
