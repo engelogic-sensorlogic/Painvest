@@ -178,6 +178,24 @@ def valor_instante(fatos, tags, quando, unidade="USD"):
     return None, None
 
 
+def valor_trimestre(fatos, chave, fim):
+    """Valor do trimestre encerrado em `fim`, testando as tags candidatas em ordem."""
+    for tag in TAGS[chave]:
+        serie, _ = serie_trimestral(fatos, [tag])
+        if fim in serie:
+            return serie[fim], tag
+    return None, None
+
+
+def valor_anual(fatos, chave, ano):
+    """Valor do ano fiscal `ano`, testando as tags candidatas em ordem."""
+    for tag in TAGS[chave]:
+        serie, _ = serie_anual(fatos, [tag])
+        if ano in serie:
+            return serie[ano], tag
+    return None, None
+
+
 def divida_total(fatos, quando):
     totais = [(v, t) for v, t in (valor_instante(fatos, [t], quando) for t in TAGS_DIVIDA_TOTAL) if v]
     if totais:
@@ -226,22 +244,25 @@ def calcular(fatos):
             payout = None
     res["payout_calc"] = round(payout, 1) if payout is not None else None
 
-    # Dívida líquida / EBITDAre — preferência: último trimestre anualizado (padrão das REITs)
-    q = {}
-    for chave in ("lucro", "da", "juros", "impostos", "ganhos", "impairment"):
-        q[chave], _ = serie_trimestral(fatos, TAGS[chave])
-    fins = sorted(f for f in q["lucro"] if f in q["da"])
-    ebitda, base, quando = None, None, None
-    if fins:
-        f = fins[-1]
+    # Dívida líquida / EBITDAre — preferência: último trimestre anualizado (padrão das REITs).
+    # Cada componente é buscado NA DATA EXATA, testando todas as tags candidatas.
+    # Juros e D&A são obrigatórios: se faltarem, usa o ano fiscal (nunca assume zero).
+    lucros_q, _ = serie_trimestral(fatos, TAGS["lucro"])
+    ebitda, base, quando, comp = None, None, None, {}
+    for f in sorted(lucros_q, reverse=True)[:2]:          # trimestre mais recente (ou o anterior)
+        if f[:4] < str(ult):
+            break
+        comp = {k: valor_trimestre(fatos, k, f) for k in ("lucro", "juros", "impostos", "da", "ganhos", "impairment")}
         dvd_q, _ = divida_total(fatos, f)
-        if dvd_q and f[:4] >= str(ult):
-            ebitda = 4 * (q["lucro"][f] + q["juros"].get(f, 0.0) + q["impostos"].get(f, 0.0)
-                          + q["da"][f] - q["ganhos"].get(f, 0.0) + q["impairment"].get(f, 0.0))
+        if comp["lucro"][0] is not None and comp["da"][0] is not None and comp["juros"][0] is not None and dvd_q:
+            v = {k: (c[0] or 0.0) for k, c in comp.items()}
+            ebitda = 4 * (v["lucro"] + v["juros"] + v["impostos"] + v["da"] - v["ganhos"] + v["impairment"])
             base, quando = f"trimestre encerrado em {f} x 4", f
+            break
     if ebitda is None or ebitda <= 0:
-        ebitda = (s["lucro"][ult] + s["juros"].get(ult, 0.0) + s["impostos"].get(ult, 0.0)
-                  + s["da"][ult] - s["ganhos"].get(ult, 0.0) + s["impairment"].get(ult, 0.0))
+        comp = {k: valor_anual(fatos, k, ult) for k in ("lucro", "juros", "impostos", "da", "ganhos", "impairment")}
+        v = {k: (c[0] or 0.0) for k, c in comp.items()}
+        ebitda = v["lucro"] + v["juros"] + v["impostos"] + v["da"] - v["ganhos"] + v["impairment"]
         base, quando = f"ano fiscal {ult}", ult
     dvd, tag_dvd = divida_total(fatos, quando)
     caixa, _ = valor_instante(fatos, TAGS["caixa"], quando)
@@ -259,7 +280,8 @@ def calcular(fatos):
             "impairment": s["impairment"].get(a), "ffo": ffo[a],
             "ffo_acao": ffo_ps.get(a), "dividendos": s["dividendos"].get(a),
         }
-    res["detalhe"]["ultimo"] = {"ebitda": ebitda, "divida": dvd, "caixa": caixa, "base_ebitda": base}
+    res["detalhe"]["ultimo"] = {"ebitda": ebitda, "divida": dvd, "caixa": caixa, "base_ebitda": base,
+                                "componentes": {k: {"valor": c[0], "tag": c[1]} for k, c in comp.items()}}
     return res
 
 

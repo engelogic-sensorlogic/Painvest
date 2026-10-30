@@ -390,3 +390,21 @@ def test_historico_vazio_tenta_alternativas():
             return pd.DataFrame()
     with pytest.raises(market.HistoricoVazio):
         market.obter_historico(Sempre(), "O", dormir=lambda s: None)
+
+
+def test_juros_buscado_na_data_exata_com_tag_alternativa():
+    """Tag preferida de juros sem o trimestre atual; a alternativa tem -> deve usar a alternativa."""
+    fatos = _fatos_sec()
+    g = fatos["facts"]["us-gaap"]
+
+    def tri(tag, val):
+        g.setdefault(tag, {"units": {"USD": []}})["units"]["USD"].append(
+            {"start": "2026-04-01", "end": "2026-06-30", "val": val, "form": "10-Q", "filed": "2026-08-05"})
+    tri("NetIncomeLoss", 300e6)
+    tri("DepreciationAndAmortization", 650e6)
+    tri("InterestExpenseNonoperating", 280e6)   # InterestExpense (preferida) não tem este trimestre
+    g["LongTermDebt"]["units"]["USD"].append({"end": "2026-06-30", "val": 25_000e6, "form": "10-Q", "filed": "2026-08-05"})
+    r = sec.calcular(fatos)
+    comp = r["detalhe"]["ultimo"]["componentes"]
+    assert comp["juros"]["tag"] == "InterestExpenseNonoperating"
+    assert r["detalhe"]["ultimo"]["ebitda"] == pytest.approx(4 * 1230e6)
